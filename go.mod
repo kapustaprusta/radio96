@@ -1,3 +1,3 @@
-module github.com/vladnikishov/radio96
+module github.com/kapustaprusta/radio96
 
 go 1.27.0
