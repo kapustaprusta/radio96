@@ -1,7 +1,8 @@
 GO ?= go
 BINARY ?= bin/radio96
 GOLANGCI_LINT ?= bin/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.12.2
+GOLANGCI_LINT_VERSION ?= v2.13.0
+GOLANGCI_LINT_VERSION_NUMBER := $(patsubst v%,%,$(GOLANGCI_LINT_VERSION))
 PACKAGES := ./...
 
 ifneq (,$(wildcard .env))
@@ -11,7 +12,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix tools tidy check ci clean
+.PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix tools ensure-golangci-lint tidy check ci clean
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} \
@@ -52,17 +53,25 @@ fmt-check: ## Verify that Go code is formatted
 vet: ## Run go vet
 	$(GO) vet $(PACKAGES)
 
-lint: $(GOLANGCI_LINT) ## Run golangci-lint
+lint: ensure-golangci-lint ## Run golangci-lint
 	PATH="$$($(GO) env GOROOT)/bin:$$PATH" $(GOLANGCI_LINT) run $(PACKAGES)
 
-lint-fix: $(GOLANGCI_LINT) ## Fix golangci-lint issues where possible
+lint-fix: ensure-golangci-lint ## Fix golangci-lint issues where possible
 	PATH="$$($(GO) env GOROOT)/bin:$$PATH" $(GOLANGCI_LINT) run --fix $(PACKAGES)
 
-tools: $(GOLANGCI_LINT) ## Install development tools
+tools: ensure-golangci-lint ## Install development tools
 
-$(GOLANGCI_LINT):
-	mkdir -p $(dir $(GOLANGCI_LINT))
-	GOBIN=$(CURDIR)/$(dir $(GOLANGCI_LINT)) $(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+ensure-golangci-lint:
+	@installed_version=""; \
+	if [ -x "$(GOLANGCI_LINT)" ]; then \
+		installed_version="$$($(GOLANGCI_LINT) version 2>/dev/null | awk '{print $$4}')"; \
+	fi; \
+	if [ "$$installed_version" != "$(GOLANGCI_LINT_VERSION_NUMBER)" ]; then \
+		echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)"; \
+		mkdir -p $(dir $(GOLANGCI_LINT)); \
+		GOBIN=$(CURDIR)/$(dir $(GOLANGCI_LINT)) $(GO) install \
+			github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
+	fi
 
 tidy: ## Update go.mod and go.sum
 	$(GO) mod tidy
