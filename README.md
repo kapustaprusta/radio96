@@ -35,6 +35,11 @@ make build       # собрать bin/radio96
 make test        # запустить тесты
 make test-race   # запустить тесты с race detector
 make fmt         # отформатировать Go-код
-make check       # проверить форматирование, go vet и тесты
+make lint        # запустить golangci-lint
+make lint-fix    # автоматически исправить доступные lint-ошибки
+make check       # проверить форматирование, lint и тесты
 make ci          # выполнить полный набор CI-проверок
 ```
+
+При первом запуске `make lint` устанавливает закреплённую версию `golangci-lint`
+в игнорируемый каталог `bin/`.
