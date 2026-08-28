@@ -1,5 +1,7 @@
 GO ?= go
 BINARY ?= bin/radio96
+GOLANGCI_LINT ?= bin/golangci-lint
+GOLANGCI_LINT_VERSION ?= v2.12.2
 PACKAGES := ./...
 
 ifneq (,$(wildcard .env))
@@ -9,10 +11,11 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run build test test-race test-cover fmt fmt-check vet tidy check ci clean
+.PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix tools tidy check ci clean
 
 help: ## Show available targets
-	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} /^[a-zA-Z_-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} \
+	/^[a-zA-Z_-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 run: ## Run the application
 	$(GO) run ./cmd/radio96
@@ -49,12 +52,24 @@ fmt-check: ## Verify that Go code is formatted
 vet: ## Run go vet
 	$(GO) vet $(PACKAGES)
 
+lint: $(GOLANGCI_LINT) ## Run golangci-lint
+	PATH="$$($(GO) env GOROOT)/bin:$$PATH" $(GOLANGCI_LINT) run $(PACKAGES)
+
+lint-fix: $(GOLANGCI_LINT) ## Fix golangci-lint issues where possible
+	PATH="$$($(GO) env GOROOT)/bin:$$PATH" $(GOLANGCI_LINT) run --fix $(PACKAGES)
+
+tools: $(GOLANGCI_LINT) ## Install development tools
+
+$(GOLANGCI_LINT):
+	mkdir -p $(dir $(GOLANGCI_LINT))
+	GOBIN=$(CURDIR)/$(dir $(GOLANGCI_LINT)) $(GO) install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+
 tidy: ## Update go.mod and go.sum
 	$(GO) mod tidy
 
-check: fmt-check vet test ## Run fast local checks
+check: fmt-check lint test ## Run fast local checks
 
-ci: fmt-check vet test-race ## Run all CI checks
+ci: fmt-check lint test-race ## Run all CI checks
 
 clean: ## Remove build and test artifacts
 	$(GO) clean

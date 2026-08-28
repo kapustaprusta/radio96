@@ -38,7 +38,7 @@ func TestRun(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			var ctx context.Context = context.Background()
+			ctx := context.Background()
 			if testCase.cancelContext {
 				cancelledCtx, cancel := context.WithCancel(ctx)
 				cancel()
@@ -57,6 +57,7 @@ func TestRun(t *testing.T) {
 			if err == nil {
 				t.Fatalf("Run() error = nil, want it to contain %q", testCase.wantErr)
 			}
+
 			if !strings.Contains(err.Error(), testCase.wantErr) {
 				t.Errorf("Run() error = %q, want it to contain %q", err, testCase.wantErr)
 			}

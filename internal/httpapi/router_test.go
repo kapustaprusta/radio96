@@ -55,12 +55,14 @@ func TestStatusEndpoints(t *testing.T) {
 			if response.Code != testCase.wantStatus {
 				t.Errorf("status = %d, want %d", response.Code, testCase.wantStatus)
 			}
+
 			if testCase.wantContentType != "" {
 				contentType := response.Header().Get("Content-Type")
 				if contentType != testCase.wantContentType {
 					t.Errorf("Content-Type = %q, want %q", contentType, testCase.wantContentType)
 				}
 			}
+
 			if testCase.wantBody != "" && response.Body.String() != testCase.wantBody {
 				t.Errorf("body = %q, want %q", response.Body.String(), testCase.wantBody)
 			}

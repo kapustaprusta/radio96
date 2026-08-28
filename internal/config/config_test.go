@@ -57,6 +57,7 @@ func TestLoad(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
+
 			if *got != testCase.want {
 				t.Errorf("Load() = %+v, want %+v", *got, testCase.want)
 			}
@@ -102,6 +103,7 @@ func TestAddressFromEnv(t *testing.T) {
 			if err != nil {
 				t.Fatalf("addressFromEnv() error = %v", err)
 			}
+
 			if got != testCase.want {
 				t.Errorf("addressFromEnv() = %q, want %q", got, testCase.want)
 			}
@@ -140,6 +142,7 @@ func TestDurationFromEnv(t *testing.T) {
 			if err != nil {
 				t.Fatalf("durationFromEnv() error = %v", err)
 			}
+
 			if got != testCase.want {
 				t.Errorf("durationFromEnv() = %s, want %s", got, testCase.want)
 			}
@@ -153,6 +156,7 @@ func assertErrorContains(t *testing.T, err error, want string) {
 	if err == nil {
 		t.Fatalf("error = nil, want it to contain %q", want)
 	}
+
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %q, want it to contain %q", err, want)
 	}
