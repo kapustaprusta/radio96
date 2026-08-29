@@ -10,7 +10,13 @@
 - PostgreSQL для состояния комнат;
 - LiveKit Cloud для передачи аудио с возможностью перейти на self-hosted LiveKit.
 
-Согласованный план и backend-архитектура описаны в [docs/PLAN.md](docs/PLAN.md).
+Согласованный план и backend-архитектура описаны в [docs/PLAN.md](docs/PLAN.md),
+а интерфейс web-MVP — в [docs/UI_SPEC.md](docs/UI_SPEC.md).
+
+## API contract
+
+HTTP API описан в [api/openapi.yaml](api/openapi.yaml). Команды `make test` и
+`make ci` проверяют OpenAPI-документ как часть Go-тестов.
 
 ## Development
 
