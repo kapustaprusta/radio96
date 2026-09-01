@@ -11,7 +11,8 @@
 - LiveKit Cloud для передачи аудио с возможностью перейти на self-hosted LiveKit.
 
 Согласованный план и backend-архитектура описаны в [docs/PLAN.md](docs/PLAN.md),
-а интерфейс web-MVP — в [docs/UI_SPEC.md](docs/UI_SPEC.md).
+интерфейс web-MVP — в [docs/UI_SPEC.md](docs/UI_SPEC.md), а его состояния и
+переходы можно посмотреть в [основном интерактивном макете](docs/radio96-design-mockups.html).
 
 ## API contract
 

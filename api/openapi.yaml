@@ -25,8 +25,9 @@ paths:
         - Rooms
       summary: Create a room
       description: |
-        Creates an open room and returns an invite URL. The LiveKit room is
-        created later, when the first participant connects.
+        Creates an open room and returns its opaque application ID together
+        with the invite URL. The LiveKit room is created later, when the first
+        participant connects.
       operationId: createRoom
       responses:
         "201":
@@ -80,7 +81,10 @@ paths:
       summary: Join a room
       description: |
         Validates the room and display name, then issues short-lived LiveKit
-        connection credentials. Duplicate display names are allowed.
+        connection credentials. Duplicate display names are allowed. Local
+        microphone availability and browser permission are not prerequisites:
+        the participant may connect without publishing an audio track and
+        start publishing a microphone later with the same credentials.
       operationId: joinRoom
       requestBody:
         required: true
@@ -195,16 +199,26 @@ components:
       type: object
       additionalProperties: false
       required:
+        - roomId
         - inviteUrl
         - expiresAt
         - maxParticipants
       properties:
+        roomId:
+          type: string
+          minLength: 1
+          description: |
+            Opaque application-level room ID. It is not an invite code, is not
+            shown as the room title, and must not be used to construct the
+            share URL.
         inviteUrl:
           type: string
           format: uri-reference
           description: |
-            Same-origin URL that the frontend can resolve to an absolute URL
-            before sharing.
+            Same-origin `/rooms/{inviteCode}` URL. The frontend resolves it to
+            an absolute URL before sharing and may copy the current browser URL
+            after navigation. The backend stores only the invite-code hash and
+            does not provide a separate endpoint for reconstructing this URL.
           examples:
             - /rooms/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
         expiresAt:
@@ -240,6 +254,10 @@ components:
     JoinRoomRequest:
       type: object
       additionalProperties: false
+      description: |
+        The backend does not receive microphone availability or permission
+        state. The same request is used for participants joining with or without
+        a local microphone track.
       required:
         - displayName
       properties:
@@ -268,7 +286,9 @@ components:
         participantToken:
           type: string
           minLength: 1
-          description: Short-lived LiveKit participant JWT.
+          description: |
+            Short-lived LiveKit participant JWT. It permits microphone-only
+            publication but does not require the participant to publish a track.
         participantIdentity:
           type: string
           minLength: 1
