@@ -9,5 +9,8 @@ var (
 	ErrInvalidTransition  = errors.New("invalid room transition")
 	ErrRoomExpired        = errors.New("room expired")
 	ErrRoomFinished       = errors.New("room finished")
+	ErrRoomFull           = errors.New("room full")
+	ErrRoomNotFound       = errors.New("room not found")
 	ErrRoomNotExpired     = errors.New("room is not expired yet")
+	ErrMediaUnavailable   = errors.New("media unavailable")
 )
