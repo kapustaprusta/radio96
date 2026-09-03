@@ -104,6 +104,218 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestRestore(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*RestoreRoomParams)
+		wantErr error
+	}{
+		{
+			name: "open room",
+		},
+		{
+			name: "active room",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = StatusActive
+				params.StartedAt = timePointer(testCreatedAt.Add(time.Minute))
+			},
+		},
+		{
+			name: "finished room",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = StatusFinished
+				params.StartedAt = timePointer(testCreatedAt.Add(time.Minute))
+				params.FinishedAt = timePointer(testCreatedAt.Add(2 * time.Minute))
+			},
+		},
+		{
+			name: "expired room",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = StatusExpired
+			},
+		},
+		{
+			name: "normalizes timestamps to UTC",
+			mutate: func(params *RestoreRoomParams) {
+				location := time.FixedZone("test", 3*60*60)
+				params.CreatedAt = testCreatedAt.In(location)
+				params.ExpiresAt = testCreatedAt.Add(OpenRoomLifetime).In(location)
+			},
+		},
+		{
+			name: "missing ID",
+			mutate: func(params *RestoreRoomParams) {
+				params.ID = ""
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "missing invite code",
+			mutate: func(params *RestoreRoomParams) {
+				params.InviteCode = nil
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "missing name",
+			mutate: func(params *RestoreRoomParams) {
+				params.Name = ""
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "missing creation time",
+			mutate: func(params *RestoreRoomParams) {
+				params.CreatedAt = time.Time{}
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "expiry does not follow creation",
+			mutate: func(params *RestoreRoomParams) {
+				params.ExpiresAt = params.CreatedAt
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "unknown status",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = Status("unknown")
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "open room with start time",
+			mutate: func(params *RestoreRoomParams) {
+				params.StartedAt = timePointer(testCreatedAt.Add(time.Minute))
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "active room without start time",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = StatusActive
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "finished room without finish time",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = StatusFinished
+				params.StartedAt = timePointer(testCreatedAt.Add(time.Minute))
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "start time precedes creation",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = StatusActive
+				params.StartedAt = timePointer(testCreatedAt.Add(-time.Second))
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "finish time precedes start",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = StatusFinished
+				params.StartedAt = timePointer(testCreatedAt.Add(2 * time.Minute))
+				params.FinishedAt = timePointer(testCreatedAt.Add(time.Minute))
+			},
+			wantErr: ErrInvalidRoom,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			params := RestoreRoomParams{
+				ID:         "room-id",
+				InviteCode: newTestInviteCode(t),
+				Name:       "room-name",
+				Status:     StatusOpen,
+				CreatedAt:  testCreatedAt,
+				ExpiresAt:  testCreatedAt.Add(OpenRoomLifetime),
+			}
+			if test.mutate != nil {
+				test.mutate(&params)
+			}
+
+			got, err := Restore(params)
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("Restore() error = %v, want %v", err, test.wantErr)
+			}
+
+			if test.wantErr != nil {
+				if got != nil {
+					t.Errorf("Restore() = %v, want nil", got)
+				}
+
+				return
+			}
+
+			assertRestoredRoom(t, got, params)
+		})
+	}
+}
+
+func assertRestoredRoom(t *testing.T, got *Room, params RestoreRoomParams) {
+	t.Helper()
+
+	if got == nil {
+		t.Fatal("Restore() = nil, want room")
+	}
+
+	if got.ID() != params.ID || got.Name() != params.Name || got.Status() != params.Status {
+		t.Errorf(
+			"Restore() identity = (%q, %q, %q), want (%q, %q, %q)",
+			got.ID(),
+			got.Name(),
+			got.Status(),
+			params.ID,
+			params.Name,
+			params.Status,
+		)
+	}
+
+	if got.InviteCode() != params.InviteCode {
+		t.Errorf("InviteCode() = %v, want %v", got.InviteCode(), params.InviteCode)
+	}
+
+	if !got.CreatedAt().Equal(params.CreatedAt) || got.CreatedAt().Location() != time.UTC {
+		t.Errorf("CreatedAt() = %v, want %v in UTC", got.CreatedAt(), params.CreatedAt)
+	}
+
+	if !got.ExpiresAt().Equal(params.ExpiresAt) || got.ExpiresAt().Location() != time.UTC {
+		t.Errorf("ExpiresAt() = %v, want %v in UTC", got.ExpiresAt(), params.ExpiresAt)
+	}
+
+	assertOptionalRoomTime(t, "StartedAt", got.StartedAt, params.StartedAt)
+	assertOptionalRoomTime(t, "FinishedAt", got.FinishedAt, params.FinishedAt)
+}
+
+func assertOptionalRoomTime(
+	t *testing.T,
+	name string,
+	getter func() (time.Time, bool),
+	want *time.Time,
+) {
+	t.Helper()
+
+	got, ok := getter()
+	if ok != (want != nil) {
+		t.Errorf("%s() present = %t, want %t", name, ok, want != nil)
+
+		return
+	}
+
+	if want != nil && (!got.Equal(*want) || got.Location() != time.UTC) {
+		t.Errorf("%s() = %v, want %v in UTC", name, got, *want)
+	}
+}
+
+func timePointer(value time.Time) *time.Time {
+	return &value
+}
+
 func TestRoomValidateJoin(t *testing.T) {
 	tests := []struct {
 		name    string

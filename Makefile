@@ -3,6 +3,8 @@ BINARY ?= bin/radio96
 GOLANGCI_LINT ?= bin/golangci-lint
 GOLANGCI_LINT_VERSION ?= v2.13.0
 GOLANGCI_LINT_VERSION_NUMBER := $(patsubst v%,%,$(GOLANGCI_LINT_VERSION))
+SQLC ?= bin/sqlc
+SQLC_VERSION ?= v1.31.1
 PACKAGES := ./...
 
 ifneq (,$(wildcard .env))
@@ -12,7 +14,7 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix tools ensure-golangci-lint tidy check ci clean
+.PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix generate sqlc-check tools ensure-golangci-lint ensure-sqlc tidy check ci clean
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} \
@@ -59,7 +61,14 @@ lint: ensure-golangci-lint ## Run golangci-lint
 lint-fix: ensure-golangci-lint ## Fix golangci-lint issues where possible
 	PATH="$$($(GO) env GOROOT)/bin:$$PATH" $(GOLANGCI_LINT) run --fix $(PACKAGES)
 
-tools: ensure-golangci-lint ## Install development tools
+generate: ensure-sqlc ## Generate Go database code
+	$(SQLC) generate
+
+sqlc-check: ensure-sqlc ## Verify generated database code is up to date
+	$(SQLC) generate
+	git diff --exit-code -- internal/postgres/dbgen
+
+tools: ensure-golangci-lint ensure-sqlc ## Install development tools
 
 ensure-golangci-lint:
 	@installed_version=""; \
@@ -73,12 +82,24 @@ ensure-golangci-lint:
 			github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
 	fi
 
+ensure-sqlc:
+	@installed_version=""; \
+	if [ -x "$(SQLC)" ]; then \
+		installed_version="$$($(SQLC) version 2>/dev/null)"; \
+	fi; \
+	if [ "$$installed_version" != "$(SQLC_VERSION)" ]; then \
+		echo "Installing sqlc $(SQLC_VERSION)"; \
+		mkdir -p $(dir $(SQLC)); \
+		GOBIN=$(CURDIR)/$(dir $(SQLC)) $(GO) install \
+			github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION); \
+	fi
+
 tidy: ## Update go.mod and go.sum
 	$(GO) mod tidy
 
-check: fmt-check lint test ## Run fast local checks
+check: fmt-check sqlc-check lint test ## Run fast local checks
 
-ci: fmt-check lint test-race ## Run all CI checks
+ci: fmt-check sqlc-check lint test-race ## Run all CI checks
 
 clean: ## Remove build and test artifacts
 	$(GO) clean
