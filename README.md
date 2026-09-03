@@ -19,7 +19,7 @@
 HTTP API описан в [api/openapi.yaml](api/openapi.yaml). Команды `make test` и
 `make ci` проверяют OpenAPI-документ как часть Go-тестов.
 
-## Development
+## Development with Go
 
 Требования: Go 1.27 и Make.
 
@@ -50,3 +50,22 @@ make ci          # выполнить полный набор CI-проверо�
 
 При первом запуске `make lint` устанавливает закреплённую версию `golangci-lint`
 в игнорируемый каталог `bin/`.
+
+## Development with Docker
+
+Требование: Docker с Compose plugin.
+
+```bash
+cp .env.example .env
+make docker-up
+```
+
+Команда собирает приложение, поднимает PostgreSQL, применяет миграции и ждёт,
+пока `http://localhost:8080/readyz` станет доступен. Порт можно изменить через
+`HTTP_PORT` в `.env`.
+
+```bash
+make docker-ps    # показать состояние контейнеров
+make docker-logs  # следить за логами приложения
+make docker-down  # остановить контейнеры, сохранив данные PostgreSQL
+```
