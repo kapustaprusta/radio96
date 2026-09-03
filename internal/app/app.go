@@ -42,7 +42,8 @@ func New(cfg *config.Config, logger *slog.Logger) *App {
 }
 
 func (a *App) Run(ctx context.Context) error {
-	listener, err := net.Listen("tcp", a.server.Addr)
+	listenConfig := net.ListenConfig{}
+	listener, err := listenConfig.Listen(ctx, "tcp", a.server.Addr)
 	if err != nil {
 		return fmt.Errorf("listen HTTP: %w", err)
 	}
@@ -60,7 +61,7 @@ func (a *App) Run(ctx context.Context) error {
 	case <-ctx.Done():
 	}
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), a.shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), a.shutdownTimeout)
 	defer cancel()
 
 	if err := a.server.Shutdown(shutdownCtx); err != nil {

@@ -47,7 +47,7 @@ func TestStatusEndpoints(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 
-			request := httptest.NewRequest(testCase.method, testCase.path, nil)
+			request := httptest.NewRequestWithContext(t.Context(), testCase.method, testCase.path, nil)
 			response := httptest.NewRecorder()
 
 			handler.ServeHTTP(response, request)

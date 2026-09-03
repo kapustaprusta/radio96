@@ -96,12 +96,14 @@ func TestRoomRepository(t *testing.T) {
 
 	t.Run("lifecycle transitions", func(t *testing.T) {
 		tests := []struct {
-			name        string
-			transitions []func(*room.Room) error
-			wantStatus  room.Status
+			name           string
+			inviteCodeFill byte
+			transitions    []func(*room.Room) error
+			wantStatus     room.Status
 		}{
 			{
-				name: "open to active",
+				name:           "open to active",
+				inviteCodeFill: 10,
 				transitions: []func(*room.Room) error{
 					func(candidate *room.Room) error {
 						return candidate.Start(testRoomCreatedAt.Add(time.Minute))
@@ -110,7 +112,8 @@ func TestRoomRepository(t *testing.T) {
 				wantStatus: room.StatusActive,
 			},
 			{
-				name: "open to active to finished",
+				name:           "open to active to finished",
+				inviteCodeFill: 11,
 				transitions: []func(*room.Room) error{
 					func(candidate *room.Room) error {
 						return candidate.Start(testRoomCreatedAt.Add(time.Minute))
@@ -122,7 +125,8 @@ func TestRoomRepository(t *testing.T) {
 				wantStatus: room.StatusFinished,
 			},
 			{
-				name: "open to expired",
+				name:           "open to expired",
+				inviteCodeFill: 12,
 				transitions: []func(*room.Room) error{
 					func(candidate *room.Room) error {
 						return candidate.Expire(testRoomCreatedAt.Add(room.OpenRoomLifetime))
@@ -132,11 +136,11 @@ func TestRoomRepository(t *testing.T) {
 			},
 		}
 
-		for index, test := range tests {
+		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
 				truncateRooms(t, ctx, pool)
 
-				inviteCode := testInviteCode(t, byte(index+10))
+				inviteCode := testInviteCode(t, test.inviteCodeFill)
 				createdRoom := testRoom(t, "room-lifecycle", "room-lifecycle", inviteCode)
 
 				if err := repository.Create(ctx, createdRoom); err != nil {
