@@ -5,6 +5,10 @@ GOLANGCI_LINT_VERSION ?= v2.13.0
 GOLANGCI_LINT_VERSION_NUMBER := $(patsubst v%,%,$(GOLANGCI_LINT_VERSION))
 SQLC ?= bin/sqlc
 SQLC_VERSION ?= v1.31.1
+DOCKER_COMPOSE ?= docker compose
+COMPOSE_FILE ?= deploy/compose.yaml
+COMPOSE_PROJECT_NAME ?= radio96
+HTTP_PORT ?= 8080
 PACKAGES := ./...
 
 ifneq (,$(wildcard .env))
@@ -15,6 +19,10 @@ endif
 .DEFAULT_GOAL := help
 
 .PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix generate sqlc-check tools ensure-golangci-lint ensure-sqlc tidy check ci clean
+.PHONY: docker-up docker-down docker-logs docker-ps
+
+COMPOSE = $(DOCKER_COMPOSE) --project-directory $(CURDIR) \
+	--project-name $(COMPOSE_PROJECT_NAME) --file $(COMPOSE_FILE)
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} \
@@ -26,6 +34,19 @@ run: ## Run the application
 build: ## Build the application binary
 	mkdir -p $(dir $(BINARY))
 	$(GO) build -o $(BINARY) ./cmd/radio96
+
+docker-up: ## Build and start the local container environment
+	$(COMPOSE) up --build --detach --wait
+	@echo "radio96 is available at http://localhost:$(HTTP_PORT)"
+
+docker-down: ## Stop the local container environment
+	$(COMPOSE) down
+
+docker-logs: ## Follow application logs
+	$(COMPOSE) logs --follow app
+
+docker-ps: ## Show local container status
+	$(COMPOSE) ps
 
 test: ## Run unit tests
 	$(GO) test $(PACKAGES)
