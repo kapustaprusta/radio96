@@ -31,33 +31,107 @@ type Room struct {
 	finishedAt *time.Time
 }
 
+type RestoreRoomParams struct {
+	ID         string
+	InviteCode *InviteCode
+	Name       string
+	Status     Status
+	CreatedAt  time.Time
+	ExpiresAt  time.Time
+	StartedAt  *time.Time
+	FinishedAt *time.Time
+}
+
 func New(id string, inviteCode *InviteCode, name string, createdAt time.Time) (*Room, error) {
-	if strings.TrimSpace(id) == "" {
+	createdAt = createdAt.UTC()
+
+	return Restore(RestoreRoomParams{
+		ID:         id,
+		InviteCode: inviteCode,
+		Name:       name,
+		Status:     StatusOpen,
+		CreatedAt:  createdAt,
+		ExpiresAt:  createdAt.Add(OpenRoomLifetime),
+	})
+}
+
+func Restore(params RestoreRoomParams) (*Room, error) {
+	if strings.TrimSpace(params.ID) == "" {
 		return nil, fmt.Errorf("%w: ID is required", ErrInvalidRoom)
 	}
 
-	if inviteCode == nil {
+	if params.InviteCode == nil {
 		return nil, fmt.Errorf("%w: invite code is required", ErrInvalidRoom)
 	}
 
-	if strings.TrimSpace(name) == "" {
+	if strings.TrimSpace(params.Name) == "" {
 		return nil, fmt.Errorf("%w: name is required", ErrInvalidRoom)
 	}
 
-	if createdAt.IsZero() {
+	if params.CreatedAt.IsZero() {
 		return nil, fmt.Errorf("%w: creation time is required", ErrInvalidRoom)
 	}
 
-	createdAt = createdAt.UTC()
+	if params.ExpiresAt.IsZero() || !params.ExpiresAt.After(params.CreatedAt) {
+		return nil, fmt.Errorf("%w: expiry time must follow creation", ErrInvalidRoom)
+	}
+
+	createdAt := params.CreatedAt.UTC()
+	expiresAt := params.ExpiresAt.UTC()
+	startedAt := normalizedTime(params.StartedAt)
+	finishedAt := normalizedTime(params.FinishedAt)
+
+	if startedAt != nil && (startedAt.IsZero() || startedAt.Before(createdAt)) {
+		return nil, fmt.Errorf("%w: start time cannot precede creation", ErrInvalidRoom)
+	}
+
+	if finishedAt != nil && (finishedAt.IsZero() || startedAt == nil || finishedAt.Before(*startedAt)) {
+		return nil, fmt.Errorf("%w: finish time cannot precede start", ErrInvalidRoom)
+	}
+
+	if err := validateRestoredStatus(params.Status, startedAt, finishedAt); err != nil {
+		return nil, err
+	}
 
 	return &Room{
-		id:         id,
-		name:       name,
-		status:     StatusOpen,
-		inviteCode: inviteCode,
+		id:         params.ID,
+		name:       params.Name,
+		status:     params.Status,
+		inviteCode: params.InviteCode,
 		createdAt:  createdAt,
-		expiresAt:  createdAt.Add(OpenRoomLifetime),
+		expiresAt:  expiresAt,
+		startedAt:  startedAt,
+		finishedAt: finishedAt,
 	}, nil
+}
+
+func normalizedTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+
+	normalized := value.UTC()
+
+	return &normalized
+}
+
+func validateRestoredStatus(status Status, startedAt, finishedAt *time.Time) error {
+	valid := false
+
+	switch status {
+	case StatusOpen, StatusExpired:
+		valid = startedAt == nil && finishedAt == nil
+	case StatusActive:
+		valid = startedAt != nil && finishedAt == nil
+	case StatusFinished:
+		valid = startedAt != nil && finishedAt != nil
+	}
+
+	if !valid {
+		return fmt.Errorf("%w: timestamps do not match status %q", ErrInvalidRoom, status)
+	}
+
+	return nil
 }
 
 func (r *Room) ID() string {
