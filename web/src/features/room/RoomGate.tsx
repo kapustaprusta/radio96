@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { ApiError, getRoom } from "../../api/rooms";
-import { AlertIcon, ClockIcon, PhoneOffIcon, SearchIcon } from "../../components/Icons";
+import { ClockIcon, PhoneOffIcon, RadioIcon, SearchIcon, UnplugIcon, UsersIcon } from "../../components/Icons";
 import type { ReactNode } from "react";
 import { PreJoin } from "./PreJoin";
 
@@ -104,7 +104,7 @@ function LoadingState() {
     <section className="screen centered-screen" aria-live="polite" aria-busy="true">
       <div className="state-stack">
         <span className="state-icon state-icon--loading" aria-hidden="true">
-          <span className="spinner spinner--large" />
+          <RadioIcon />
         </span>
         <p className="eyebrow">Шаг 1 из 3</p>
         <h1>Проверяем комнату…</h1>
@@ -159,7 +159,7 @@ function RecoverableError({ code, onRetry, onHome }: { code: string; onRetry: ()
     <section className="screen centered-screen">
       <div className="state-stack" role="alert">
         <span className="state-icon state-icon--danger" aria-hidden="true">
-          <AlertIcon />
+          <UnplugIcon />
         </span>
         <h1>{title}</h1>
         <p>Проверь интернет и попробуй ещё раз.</p>
@@ -204,5 +204,5 @@ function terminalIcon(terminal: TerminalKind): ReactNode {
     return <PhoneOffIcon />;
   }
 
-  return <AlertIcon />;
+  return <UsersIcon />;
 }

@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
-import { CheckIcon, LinkIcon, RadioIcon } from "../../components/Icons";
+import { CheckIcon, LinkIcon, MicIcon, MicOffIcon, SettingsIcon } from "../../components/Icons";
 import { validateDisplayName } from "../../displayName";
 import type { DisplayNameError } from "../../displayName";
+import { AudioSettingsDialog } from "./AudioSettingsDialog";
+import type { AudioInputChoice } from "./AudioSettingsDialog";
 
 const errorMessages: Record<DisplayNameError, string> = {
   empty: "Введи никнейм",
@@ -16,8 +18,15 @@ export function PreJoin() {
   const [displayName, setDisplayName] = useState("");
   const [nameError, setNameError] = useState<DisplayNameError | null>(null);
   const [nameWasChecked, setNameWasChecked] = useState(false);
+  const [microphoneEnabled, setMicrophoneEnabled] = useState(true);
+  const [selectedInput, setSelectedInput] = useState<AudioInputChoice>({
+    deviceId: "default",
+    label: "Микрофон по умолчанию",
+  });
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const fallbackInput = useRef<HTMLInputElement>(null);
+  const settingsButton = useRef<HTMLButtonElement>(null);
   const toastTimer = useRef<number | null>(null);
 
   useEffect(
@@ -54,6 +63,11 @@ export function PreJoin() {
     checkName();
   };
 
+  const closeSettings = useCallback(() => {
+    setSettingsOpen(false);
+    window.requestAnimationFrame(() => settingsButton.current?.focus());
+  }, []);
+
   const handleCopy = async () => {
     if (toastTimer.current !== null) {
       window.clearTimeout(toastTimer.current);
@@ -75,23 +89,13 @@ export function PreJoin() {
     }
   };
 
-  const fieldDescription = nameError ? "display-name-hint display-name-error" : "display-name-hint";
-
   return (
     <section className="screen centered-screen">
       <div className="prejoin-card">
-        <div className="prejoin-heading">
-          <span className="prejoin-heading__icon" aria-hidden="true">
-            <RadioIcon />
-          </span>
-          <div>
-            <p className="eyebrow">Голосовая комната</p>
-            <h1>Вход в комнату</h1>
-          </div>
-        </div>
+        <h1>Вход в комнату</h1>
 
         <form noValidate onSubmit={handleSubmit}>
-          <label className="sr-only" htmlFor="display-name">
+          <label className="field-label" htmlFor="display-name">
             Никнейм
           </label>
           <input
@@ -100,11 +104,10 @@ export function PreJoin() {
             name="displayName"
             type="text"
             value={displayName}
-            placeholder="Никнейм"
             autoComplete="nickname"
             autoFocus
             aria-invalid={nameError ? "true" : undefined}
-            aria-describedby={fieldDescription}
+            aria-describedby={nameError ? "display-name-error" : undefined}
             onChange={(event) => {
               setDisplayName(event.target.value);
               if (nameWasChecked) {
@@ -114,13 +117,31 @@ export function PreJoin() {
             }}
             onBlur={checkName}
           />
-          <div className="field-meta">
-            <span id="display-name-hint">От 1 до 32 символов</span>
-            {nameError && (
-              <span className="field-error" id="display-name-error" role="alert">
-                {errorMessages[nameError]}
-              </span>
-            )}
+
+          {nameError && (
+            <p className="field-error" id="display-name-error" role="alert">
+              {errorMessages[nameError]}.
+            </p>
+          )}
+
+          <div className="audio-row">
+            <span className="audio-row__icon" aria-hidden="true">
+              {microphoneEnabled ? <MicIcon /> : <MicOffIcon />}
+            </span>
+            <span className="audio-row__copy">
+              <strong>Микрофон {microphoneEnabled ? "включён" : "выключен"}</strong>
+              <span>{selectedInput.label}</span>
+            </span>
+            <button
+              className="mic-switch"
+              type="button"
+              role="switch"
+              aria-checked={microphoneEnabled}
+              aria-label={microphoneEnabled ? "Выключить микрофон" : "Включить микрофон"}
+              onClick={() => setMicrophoneEnabled((value) => !value)}
+            >
+              <span aria-hidden="true" />
+            </button>
           </div>
 
           <div className="prejoin-actions">
@@ -135,6 +156,16 @@ export function PreJoin() {
               onClick={handleCopy}
             >
               <LinkIcon />
+            </button>
+            <button
+              ref={settingsButton}
+              className="button button--icon"
+              type="button"
+              aria-label="Настроить звук"
+              title="Настроить звук"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <SettingsIcon />
             </button>
           </div>
         </form>
@@ -162,6 +193,10 @@ export function PreJoin() {
           </>
         )}
       </div>
+
+      {settingsOpen && (
+        <AudioSettingsDialog selectedInput={selectedInput} onInputChange={setSelectedInput} onClose={closeSettings} />
+      )}
     </section>
   );
 }

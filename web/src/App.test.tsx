@@ -145,13 +145,35 @@ describe("pre-join", () => {
     await user.click(input);
     await user.tab();
 
-    expect(screen.getByText("Введи никнейм")).toBeInTheDocument();
+    expect(screen.getByText("Введи никнейм.")).toBeInTheDocument();
 
     await user.type(input, "  Влад  ");
     await user.click(screen.getByRole("button", { name: "Войти в разговор" }));
 
     expect(input).toHaveValue("Влад");
-    expect(screen.queryByText("Введи никнейм")).not.toBeInTheDocument();
+    expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
+  });
+
+  it("toggles the microphone and opens audio settings", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", `/rooms/${inviteCode}`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ status: "open", expiresAt: "2026-09-04T10:00:00Z" }, 200)),
+    );
+
+    render(<App />);
+    const microphoneSwitch = await screen.findByRole("switch", { name: "Выключить микрофон" });
+    await user.click(microphoneSwitch);
+
+    expect(screen.getByText("Микрофон выключен")).toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "Включить микрофон" })).toHaveAttribute("aria-checked", "false");
+
+    await user.click(screen.getByRole("button", { name: "Настроить звук" }));
+    expect(screen.getByRole("dialog", { name: "Настройки звука" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
+    expect(screen.queryByRole("dialog", { name: "Настройки звука" })).not.toBeInTheDocument();
   });
 
   it("copies only the current full room URL", async () => {
