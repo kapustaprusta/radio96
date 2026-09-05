@@ -1,16 +1,18 @@
 package room
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
+	"strings"
 )
 
 const (
-	InviteCodeEntropyBytes = 32
-	InviteCodeLength       = 43
+	InviteCodeLength   = 32
+	inviteCodeAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
 )
 
 type InviteCode struct {
@@ -20,28 +22,34 @@ type InviteCode struct {
 type InviteCodeHash [sha256.Size]byte
 
 func GenerateInviteCode(random io.Reader) (*InviteCode, error) {
-	entropy := make([]byte, InviteCodeEntropyBytes)
-	if _, err := io.ReadFull(random, entropy); err != nil {
-		return nil, fmt.Errorf("read invite code entropy: %w", err)
+	value := make([]byte, InviteCodeLength)
+	alphabetSize := big.NewInt(int64(len(inviteCodeAlphabet)))
+
+	for index := range value {
+		symbol, err := rand.Int(random, alphabetSize)
+		if err != nil {
+			return nil, fmt.Errorf("read invite code entropy: %w", err)
+		}
+
+		value[index] = inviteCodeAlphabet[symbol.Int64()]
 	}
 
-	return &InviteCode{
-		value: base64.RawURLEncoding.EncodeToString(entropy),
-	}, nil
+	return &InviteCode{value: string(value)}, nil
 }
 
 func ParseInviteCode(value string) (*InviteCode, error) {
-	decoded, err := base64.RawURLEncoding.DecodeString(value)
-	if err != nil || len(decoded) != InviteCodeEntropyBytes {
+	if len(value) != InviteCodeLength {
 		return nil, fmt.Errorf(
-			"%w: expected %d base64url characters",
+			"%w: expected %d ASCII letters or digits",
 			ErrInvalidInviteCode,
 			InviteCodeLength,
 		)
 	}
 
-	if base64.RawURLEncoding.EncodeToString(decoded) != value {
-		return nil, fmt.Errorf("%w: encoding is not canonical", ErrInvalidInviteCode)
+	for _, symbol := range value {
+		if !strings.ContainsRune(inviteCodeAlphabet, symbol) {
+			return nil, fmt.Errorf("%w: expected ASCII letters or digits", ErrInvalidInviteCode)
+		}
 	}
 
 	return &InviteCode{value: value}, nil

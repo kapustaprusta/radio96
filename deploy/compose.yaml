@@ -48,6 +48,13 @@ services:
     environment:
       HTTP_ADDR: ":8080"
       SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-10s}
+      DATABASE_URL: postgres://${POSTGRES_USER:-radio96}@postgres:5432/${POSTGRES_DB:-radio96}?sslmode=disable
+      PGPASSWORD: ${POSTGRES_PASSWORD:-radio96}
+      DATABASE_CONNECT_TIMEOUT: ${DATABASE_CONNECT_TIMEOUT:-5s}
+      MEDIA_REQUEST_TIMEOUT: ${MEDIA_REQUEST_TIMEOUT:-5s}
+      LIVEKIT_URL: ${LIVEKIT_URL:-}
+      LIVEKIT_API_KEY: ${LIVEKIT_API_KEY:-}
+      LIVEKIT_API_SECRET: ${LIVEKIT_API_SECRET:-}
     ports:
       - "127.0.0.1:${HTTP_PORT:-8080}:8080"
     depends_on:

@@ -19,7 +19,7 @@ endif
 .DEFAULT_GOAL := help
 
 .PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix generate sqlc-check tools ensure-golangci-lint ensure-sqlc tidy check ci clean
-.PHONY: docker-up docker-down docker-logs docker-ps
+.PHONY: docker-up docker-down docker-logs docker-ps docker-db
 
 COMPOSE = $(DOCKER_COMPOSE) --project-directory $(CURDIR) \
 	--project-name $(COMPOSE_PROJECT_NAME) --file $(COMPOSE_FILE)
@@ -38,6 +38,10 @@ build: ## Build the application binary
 docker-up: ## Build and start the local container environment
 	$(COMPOSE) up --build --detach --wait
 	@echo "radio96 is available at http://localhost:$(HTTP_PORT)"
+
+docker-db: ## Start PostgreSQL and apply migrations for local Go development
+	$(COMPOSE) up --detach --wait postgres
+	$(COMPOSE) run --rm migrate
 
 docker-down: ## Stop the local container environment
 	$(COMPOSE) down
@@ -66,7 +70,7 @@ fmt-check: ## Verify that Go code is formatted
 		echo "gofmt is not available: $$gofmt"; \
 		exit 1; \
 	fi; \
-	unformatted="$$($$gofmt -l $$(find . -type f -name '*.go' -not -path './vendor/*'))"; \
+	unformatted="$$($$gofmt -l $$(find . -type f -name '*.go' -not -path './vendor/*' -not -path '*/node_modules/*'))"; \
 	if [ -n "$$unformatted" ]; then \
 		echo "Unformatted files:"; \
 		echo "$$unformatted"; \

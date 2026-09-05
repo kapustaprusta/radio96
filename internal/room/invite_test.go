@@ -5,68 +5,117 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"testing"
 	"testing/iotest"
 )
 
 func TestGenerateInviteCode(t *testing.T) {
-	entropy := make([]byte, InviteCodeEntropyBytes)
+	entropy := make([]byte, len(inviteCodeAlphabet))
 	for index := range entropy {
 		entropy[index] = byte(index)
 	}
 
-	code, err := GenerateInviteCode(bytes.NewReader(entropy))
-	if err != nil {
-		t.Fatalf("GenerateInviteCode() error = %v", err)
-	}
-
-	if code == nil {
-		t.Fatal("GenerateInviteCode() = nil, want invite code")
-	}
-
-	if len(code.Value()) != InviteCodeLength {
-		t.Errorf("invite code length = %d, want %d", len(code.Value()), InviteCodeLength)
-	}
-
-	parsed, err := ParseInviteCode(code.Value())
-	if err != nil {
-		t.Fatalf("ParseInviteCode() error = %v", err)
-	}
-
-	if parsed.Value() != code.Value() {
-		t.Errorf("parsed invite code = %q, want %q", parsed.Value(), code.Value())
-	}
-}
-
-func TestGenerateInviteCodeRandomError(t *testing.T) {
 	randomErr := errors.New("random source failed")
-
-	code, err := GenerateInviteCode(iotest.ErrReader(randomErr))
-	if !errors.Is(err, randomErr) {
-		t.Fatalf("GenerateInviteCode() error = %v, want %v", err, randomErr)
+	tests := []struct {
+		name    string
+		random  io.Reader
+		want    string
+		wantErr error
+	}{
+		{
+			name: "mixed case letters", random: bytes.NewReader(entropy),
+			want: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdef",
+		},
+		{
+			name: "lowercase letters and digits", random: bytes.NewReader(entropy[len(entropy)-InviteCodeLength:]),
+			want: "efghijklmnopqrstuvwxyz0123456789",
+		},
+		{
+			name: "first alphabet character", random: bytes.NewReader(make([]byte, InviteCodeLength)),
+			want: strings.Repeat("A", InviteCodeLength),
+		},
+		{
+			name: "last alphabet character", random: bytes.NewReader(bytes.Repeat([]byte{61}, InviteCodeLength)),
+			want: strings.Repeat("9", InviteCodeLength),
+		},
+		{
+			name: "retries rejected random values without modulo bias",
+			random: io.MultiReader(
+				bytes.NewReader(bytes.Repeat([]byte{255}, InviteCodeLength)),
+				bytes.NewReader(bytes.Repeat([]byte{1}, InviteCodeLength)),
+			),
+			want: strings.Repeat("B", InviteCodeLength),
+		},
+		{name: "random source error", random: iotest.ErrReader(randomErr), wantErr: randomErr},
+		{
+			name: "exhausted random source", random: bytes.NewReader(make([]byte, InviteCodeLength-1)),
+			wantErr: io.EOF,
+		},
+		{
+			name:    "source error after partial code",
+			random:  io.MultiReader(bytes.NewReader(make([]byte, InviteCodeLength-1)), iotest.ErrReader(randomErr)),
+			wantErr: randomErr,
+		},
+		{
+			name:   "source error while retrying rejected value",
+			random: io.MultiReader(bytes.NewReader([]byte{255}), iotest.ErrReader(randomErr)), wantErr: randomErr,
+		},
 	}
 
-	if code != nil {
-		t.Errorf("GenerateInviteCode() = %v, want nil", code)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			code, err := GenerateInviteCode(test.random)
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("GenerateInviteCode() error = %v, want %v", err, test.wantErr)
+			}
+
+			if test.wantErr != nil {
+				if code != nil {
+					t.Error("GenerateInviteCode() returned a partial code on error")
+				}
+
+				return
+			}
+
+			if code == nil {
+				t.Fatal("GenerateInviteCode() = nil, want invite code")
+			}
+
+			if code.Value() != test.want {
+				t.Error("generated code does not match the deterministic random source")
+			}
+
+			if len(code.Value()) != 32 {
+				t.Errorf("invite code length = %d, want 32", len(code.Value()))
+			}
+
+			parsed, err := ParseInviteCode(code.Value())
+			if err != nil {
+				t.Fatalf("ParseInviteCode() error = %v", err)
+			}
+
+			if parsed.Value() != code.Value() {
+				t.Error("parsing changed the generated code")
+			}
+		})
 	}
 }
 
 func TestParseInviteCode(t *testing.T) {
-	validCode, err := GenerateInviteCode(bytes.NewReader(make([]byte, InviteCodeEntropyBytes)))
-	if err != nil {
-		t.Fatalf("GenerateInviteCode() error = %v", err)
-	}
-
 	tests := []struct {
 		name    string
 		value   string
 		wantErr error
 	}{
 		{
-			name:  "valid code",
-			value: validCode.Value(),
+			name:  "mixed case letters and digits",
+			value: strings.Repeat("Aa0", 10) + "Z9",
 		},
+		{name: "uppercase letters", value: strings.Repeat("A", 32)},
+		{name: "lowercase letters", value: strings.Repeat("a", 32)},
+		{name: "digits", value: strings.Repeat("0", 32)},
 		{
 			name:    "empty code",
 			wantErr: ErrInvalidInviteCode,
@@ -82,15 +131,23 @@ func TestParseInviteCode(t *testing.T) {
 			wantErr: ErrInvalidInviteCode,
 		},
 		{
-			name:    "standard base64 character",
+			name:    "plus",
 			value:   strings.Repeat("A", InviteCodeLength-1) + "+",
 			wantErr: ErrInvalidInviteCode,
 		},
 		{
 			name:    "padding",
-			value:   validCode.Value() + "=",
+			value:   strings.Repeat("A", 31) + "=",
 			wantErr: ErrInvalidInviteCode,
 		},
+		{name: "legacy format", value: strings.Repeat("A", 43), wantErr: ErrInvalidInviteCode},
+		{name: "hyphen", value: strings.Repeat("A", 31) + "-", wantErr: ErrInvalidInviteCode},
+		{name: "underscore", value: strings.Repeat("A", 31) + "_", wantErr: ErrInvalidInviteCode},
+		{name: "slash", value: strings.Repeat("A", 31) + "/", wantErr: ErrInvalidInviteCode},
+		{name: "space", value: strings.Repeat("A", 31) + " ", wantErr: ErrInvalidInviteCode},
+		{name: "newline", value: strings.Repeat("A", 31) + "\n", wantErr: ErrInvalidInviteCode},
+		{name: "trailing newline", value: strings.Repeat("A", 32) + "\n", wantErr: ErrInvalidInviteCode},
+		{name: "non-ASCII with valid byte length", value: strings.Repeat("A", 30) + "я", wantErr: ErrInvalidInviteCode},
 	}
 
 	for _, test := range tests {
@@ -110,6 +167,10 @@ func TestParseInviteCode(t *testing.T) {
 
 			if got == nil {
 				t.Fatal("ParseInviteCode() = nil, want invite code")
+			}
+
+			if got.Value() != test.value {
+				t.Error("ParseInviteCode() changed the code or its case")
 			}
 		})
 	}

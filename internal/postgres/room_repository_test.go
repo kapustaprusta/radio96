@@ -3,7 +3,6 @@ package postgres
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -212,10 +211,9 @@ func TestRoomRepository(t *testing.T) {
 func testInviteCode(t *testing.T, fill byte) *room.InviteCode {
 	t.Helper()
 
-	value := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{fill}, room.InviteCodeEntropyBytes))
-	inviteCode, err := room.ParseInviteCode(value)
+	inviteCode, err := room.GenerateInviteCode(bytes.NewReader(bytes.Repeat([]byte{fill}, room.InviteCodeLength)))
 	if err != nil {
-		t.Fatalf("ParseInviteCode() error = %v", err)
+		t.Fatalf("GenerateInviteCode() error = %v", err)
 	}
 
 	return inviteCode

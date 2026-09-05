@@ -121,6 +121,23 @@ OpenAPI — источник истины; TypeScript types/client генери�
 - Поздний self-hosting меняет только LiveKit URL/credentials и webhook configuration.
 - После web-MVP тот же frontend упаковывается в Tauri для Windows с tray и global push-to-talk.
 
+### Backend implementation progress
+
+- [x] Bootstrap, domain/use cases, PostgreSQL repository и LiveKit media gateway.
+- [x] HTTP create/get/join с единым error mapping и contract-тестами OpenAPI.
+- [x] Composition root: PostgreSQL pool, use cases, media gateway, startup check и graceful shutdown.
+- [x] `/readyz` проверяет PostgreSQL, `/healthz` — только работоспособность процесса.
+- [x] Интеграционный тест HTTP → use case → PostgreSQL и проверка подписанного participant JWT.
+- [x] Локальный режим без LiveKit credentials: create/get доступны, join отвечает `media_unavailable`.
+- [ ] Webhook signature validation, deduplication и lifecycle use cases.
+- [ ] Reconciler, advisory lock и проверки одноразовости ссылки после завершения звонка.
+- [ ] Раздача собранного frontend из Go и общий production image.
+- [ ] LiveKit Cloud smoke suite с реальным аудио и конкурентным входом девятого участника.
+
+Голосовой UI развивается в отдельной frontend-ветке. До подключения webhook и
+reconciler HTTP-срез не гарантирует полный lifecycle медиасессии: успешная
+выдача JWT сама по себе не переводит комнату в `active` и не завершает её.
+
 ## Fixed Assumptions
 
 - До 8 равноправных участников, без аккаунтов и ведущего.

@@ -1,55 +1,135 @@
 package config
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestLoad(t *testing.T) {
+	const databaseURL = "postgres://radio96@localhost/radio96"
+
+	secret := strings.Repeat("x", 32)
+	credentialURL := &url.URL{Scheme: "wss", Host: "livekit.test", User: url.UserPassword("user", secret)}
+	defaults := Config{
+		HTTPAddress:            defaultHTTPAddress,
+		ShutdownTimeout:        defaultShutdownTimeout,
+		DatabaseURL:            databaseURL,
+		DatabaseConnectTimeout: defaultDatabaseConnectTimeout,
+		MediaRequestTimeout:    defaultMediaRequestTimeout,
+	}
+
 	testCases := []struct {
-		name            string
-		httpAddress     string
-		shutdownTimeout string
-		want            Config
-		wantErr         string
+		name        string
+		environment map[string]string
+		want        Config
+		wantErr     string
 	}{
 		{
 			name: "defaults",
-			want: Config{
-				HTTPAddress:     defaultHTTPAddress,
-				ShutdownTimeout: defaultShutdownTimeout,
-			},
+			want: defaults,
 		},
 		{
-			name:            "environment values",
-			httpAddress:     "127.0.0.1:9000",
-			shutdownTimeout: "3s",
+			name: "environment values",
+			environment: map[string]string{
+				"HTTP_ADDR": "127.0.0.1:9000", "SHUTDOWN_TIMEOUT": "3s",
+				"DATABASE_CONNECT_TIMEOUT": "2s", "MEDIA_REQUEST_TIMEOUT": "4s",
+				"LIVEKIT_URL": "wss://livekit.test", "LIVEKIT_API_KEY": "test-key", "LIVEKIT_API_SECRET": secret,
+			},
 			want: Config{
-				HTTPAddress:     "127.0.0.1:9000",
-				ShutdownTimeout: 3 * time.Second,
+				HTTPAddress:            "127.0.0.1:9000",
+				ShutdownTimeout:        3 * time.Second,
+				DatabaseURL:            databaseURL,
+				DatabaseConnectTimeout: 2 * time.Second,
+				MediaRequestTimeout:    4 * time.Second,
+				LiveKitURL:             "wss://livekit.test", LiveKitAPIKey: "test-key", LiveKitAPISecret: secret,
 			},
 		},
 		{
 			name:        "invalid HTTP address",
-			httpAddress: "localhost",
+			environment: map[string]string{"HTTP_ADDR": "localhost"},
 			wantErr:     "parse HTTP_ADDR",
 		},
 		{
-			name:            "invalid shutdown timeout",
-			shutdownTimeout: "soon",
-			wantErr:         "parse SHUTDOWN_TIMEOUT",
+			name:        "invalid shutdown timeout",
+			environment: map[string]string{"SHUTDOWN_TIMEOUT": "soon"},
+			wantErr:     "parse SHUTDOWN_TIMEOUT",
+		},
+		{name: "missing database", environment: map[string]string{"DATABASE_URL": ""}, wantErr: "DATABASE_URL is required"},
+		{
+			name: "invalid database timeout", environment: map[string]string{"DATABASE_CONNECT_TIMEOUT": "0s"},
+			wantErr: "DATABASE_CONNECT_TIMEOUT must be positive",
+		},
+		{
+			name: "invalid media timeout", environment: map[string]string{"MEDIA_REQUEST_TIMEOUT": "-1s"},
+			wantErr: "MEDIA_REQUEST_TIMEOUT must be positive",
+		},
+		{
+			name: "partial LiveKit credentials", environment: map[string]string{"LIVEKIT_API_SECRET": secret},
+			wantErr: "must be set together",
+		},
+		{
+			name: "invalid LiveKit URL",
+			environment: map[string]string{
+				"LIVEKIT_URL": "https://livekit.test", "LIVEKIT_API_KEY": "test-key", "LIVEKIT_API_SECRET": secret,
+			},
+			wantErr: "LIVEKIT_URL must use ws or wss and include a host",
+		},
+		{
+			name: "credentials in LiveKit URL",
+			environment: map[string]string{
+				"LIVEKIT_URL": credentialURL.String(), "LIVEKIT_API_KEY": "test-key", "LIVEKIT_API_SECRET": secret,
+			},
+			wantErr: "LIVEKIT_URL must not contain credentials",
+		},
+		{
+			name: "zero LiveKit port",
+			environment: map[string]string{
+				"LIVEKIT_URL": "wss://livekit.test:0", "LIVEKIT_API_KEY": "test-key", "LIVEKIT_API_SECRET": secret,
+			},
+			wantErr: "LIVEKIT_URL port must be between 1 and 65535",
+		},
+		{
+			name: "LiveKit port out of range",
+			environment: map[string]string{
+				"LIVEKIT_URL": "wss://livekit.test:65536", "LIVEKIT_API_KEY": "test-key", "LIVEKIT_API_SECRET": secret,
+			},
+			wantErr: "LIVEKIT_URL port must be between 1 and 65535",
+		},
+		{
+			name: "malformed LiveKit URL hides secrets",
+			environment: map[string]string{
+				"LIVEKIT_URL": "wss://%invalid/" + secret, "LIVEKIT_API_KEY": "test-key", "LIVEKIT_API_SECRET": secret,
+			},
+			wantErr: "LIVEKIT_URL must use ws or wss and include a host",
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			t.Setenv("HTTP_ADDR", testCase.httpAddress)
-			t.Setenv("SHUTDOWN_TIMEOUT", testCase.shutdownTimeout)
+			for _, name := range []string{
+				"HTTP_ADDR", "SHUTDOWN_TIMEOUT", "DATABASE_CONNECT_TIMEOUT", "MEDIA_REQUEST_TIMEOUT",
+				"LIVEKIT_URL", "LIVEKIT_API_KEY", "LIVEKIT_API_SECRET",
+			} {
+				t.Setenv(name, "")
+			}
+
+			t.Setenv("DATABASE_URL", databaseURL)
+			for name, value := range testCase.environment {
+				t.Setenv(name, value)
+			}
 
 			got, err := Load()
 			if testCase.wantErr != "" {
 				assertErrorContains(t, err, testCase.wantErr)
+				if got != nil {
+					t.Error("Load() returned a config on error")
+				}
+
+				if strings.Contains(err.Error(), secret) {
+					t.Error("Load() exposed a secret in its error")
+				}
 
 				return
 			}

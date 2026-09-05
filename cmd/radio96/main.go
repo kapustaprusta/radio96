@@ -29,5 +29,11 @@ func run(logger *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	return app.New(cfg, logger).Run(ctx)
+	application, err := app.New(ctx, cfg, logger)
+	if err != nil {
+		return err
+	}
+	defer application.Close()
+
+	return application.Run(ctx)
 }
