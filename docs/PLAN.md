@@ -56,7 +56,9 @@ open → active → finished
   └──────────→ expired
 ```
 
-- Invite-код: 256 случайных бит; PostgreSQL хранит только SHA-256 hash.
+- Invite-код: 32 криптографически случайных символа Base62 (`A-Z`, `a-z`, `0-9`), регистр учитывается.
+  Около 190 бит энтропии; PostgreSQL хранит только SHA-256 hash.
+  Старый 43-символьный формат не поддерживается.
 - Создание:
   1. одной транзакцией записать Room в статусе `open` с детерминированным `livekit_room_name`;
   2. вернуть invite URL сразу после commit, не вызывая LiveKit;
@@ -118,6 +120,23 @@ OpenAPI — источник истины; TypeScript types/client генери�
 - Production: provider-neutral Go image, отдельный PostgreSQL и pre-deploy migrate job.
 - Поздний self-hosting меняет только LiveKit URL/credentials и webhook configuration.
 - После web-MVP тот же frontend упаковывается в Tauri для Windows с tray и global push-to-talk.
+
+### Backend implementation progress
+
+- [x] Bootstrap, domain/use cases, PostgreSQL repository и LiveKit media gateway.
+- [x] HTTP create/get/join с единым error mapping и contract-тестами OpenAPI.
+- [x] Composition root: PostgreSQL pool, use cases, media gateway, startup check и graceful shutdown.
+- [x] `/readyz` проверяет PostgreSQL, `/healthz` — только работоспособность процесса.
+- [x] Интеграционный тест HTTP → use case → PostgreSQL и проверка подписанного participant JWT.
+- [x] Локальный режим без LiveKit credentials: create/get доступны, join отвечает `media_unavailable`.
+- [ ] Webhook signature validation, deduplication и lifecycle use cases.
+- [ ] Reconciler, advisory lock и проверки одноразовости ссылки после завершения звонка.
+- [ ] Раздача собранного frontend из Go и общий production image.
+- [ ] LiveKit Cloud smoke suite с реальным аудио и конкурентным входом девятого участника.
+
+Голосовой UI развивается в отдельной frontend-ветке. До подключения webhook и
+reconciler HTTP-срез не гарантирует полный lifecycle медиасессии: успешная
+выдача JWT сама по себе не переводит комнату в `active` и не завершает её.
 
 ## Fixed Assumptions
 

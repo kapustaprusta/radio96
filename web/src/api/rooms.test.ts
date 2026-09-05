@@ -12,7 +12,7 @@ describe("createRoom", () => {
       jsonResponse(
         {
           roomId: "room-id",
-          inviteUrl: `/rooms/${"A".repeat(43)}`,
+          inviteUrl: `/rooms/${"A".repeat(32)}`,
           expiresAt: "2026-09-04T10:00:00Z",
           maxParticipants: 8,
         },
@@ -50,7 +50,7 @@ describe("getRoom", () => {
       vi.fn().mockResolvedValue(jsonResponse({ status, expiresAt: "2026-09-04T10:00:00Z" }, 200)),
     );
 
-    await expect(getRoom("A".repeat(43))).resolves.toEqual({
+    await expect(getRoom("A".repeat(32))).resolves.toEqual({
       status,
       expiresAt: "2026-09-04T10:00:00Z",
     });
@@ -62,7 +62,7 @@ describe("getRoom", () => {
       vi.fn().mockResolvedValue(jsonResponse({ code: "room_not_found", message: "raw backend text" }, 404)),
     );
 
-    const request = getRoom("A".repeat(43));
+    const request = getRoom("A".repeat(32));
     await expect(request).rejects.toBeInstanceOf(ApiError);
     await expect(request).rejects.toMatchObject({ code: "room_not_found", status: 404 });
   });

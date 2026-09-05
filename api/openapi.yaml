@@ -161,13 +161,14 @@ components:
       in: path
       required: true
       description: |
-        A URL-safe, unpadded base64 encoding of 256 random bits. The backend
-        stores only its SHA-256 hash.
+        A case-sensitive, cryptographically random 32-character code using
+        ASCII letters and digits (A-Z, a-z, 0-9). The backend stores only its
+        SHA-256 hash. Legacy 43-character codes are not supported.
       schema:
         type: string
-        minLength: 43
-        maxLength: 43
-        pattern: "^[A-Za-z0-9_-]{43}$"
+        minLength: 32
+        maxLength: 32
+        pattern: "^[A-Za-z0-9]{32}$"
 
   headers:
     CacheControl:
@@ -220,7 +221,7 @@ components:
             after navigation. The backend stores only the invite-code hash and
             does not provide a separate endpoint for reconstructing this URL.
           examples:
-            - /rooms/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+            - /rooms/w7pM8xK2qR5vT9nY4dF6gH1jL3sC0bN2
         expiresAt:
           type: string
           format: date-time

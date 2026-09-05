@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
-const inviteCode = "A".repeat(43);
+const inviteCode = "A".repeat(32);
 
 describe("home", () => {
   it("creates a room and navigates to its same-origin pre-join", async () => {
