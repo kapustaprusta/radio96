@@ -1,48 +1,44 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
-import { CheckIcon, LinkIcon, MicIcon, MicOffIcon, SettingsIcon } from "../../components/Icons";
+import { LinkIcon, MicIcon, MicOffIcon, SettingsIcon } from "../../components/Icons";
 import { validateDisplayName } from "../../displayName";
 import type { DisplayNameError } from "../../displayName";
 import { AudioSettingsDialog } from "./AudioSettingsDialog";
 import type { AudioInputChoice } from "./AudioSettingsDialog";
+import { InviteLinkFeedback } from "./InviteLinkFeedback";
+import { defaultJoinPreferences, microphoneErrorText } from "./joinPreferences";
+import type { JoinPreferences } from "./joinPreferences";
+import { useInviteLink } from "./useInviteLink";
 
 const errorMessages: Record<DisplayNameError, string> = {
   empty: "Введи никнейм",
   "too-long": "Не больше 32 символов",
 };
 
-type CopyState = "idle" | "copied" | "fallback";
+interface PreJoinProps {
+  onJoin: (preferences: JoinPreferences) => void;
+  initialPreferences?: JoinPreferences;
+  microphoneError?: string;
+  nameRejected?: boolean;
+}
 
-export function PreJoin() {
-  const [displayName, setDisplayName] = useState("");
+export function PreJoin({
+  onJoin,
+  initialPreferences = defaultJoinPreferences,
+  microphoneError,
+  nameRejected = false,
+}: PreJoinProps) {
+  const [displayName, setDisplayName] = useState(initialPreferences.displayName);
   const [nameError, setNameError] = useState<DisplayNameError | null>(null);
+  const [serverNameError, setServerNameError] = useState(nameRejected);
   const [nameWasChecked, setNameWasChecked] = useState(false);
-  const [microphoneEnabled, setMicrophoneEnabled] = useState(true);
-  const [selectedInput, setSelectedInput] = useState<AudioInputChoice>({
-    deviceId: "default",
-    label: "Микрофон по умолчанию",
-  });
+  const [microphoneEnabled, setMicrophoneEnabled] = useState(initialPreferences.microphoneEnabled);
+  const [selectedInput, setSelectedInput] = useState<AudioInputChoice>(initialPreferences.input);
+  const [selectedOutputId, setSelectedOutputId] = useState(initialPreferences.outputId);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [copyState, setCopyState] = useState<CopyState>("idle");
-  const fallbackInput = useRef<HTMLInputElement>(null);
+  const { copyState, copy } = useInviteLink();
   const settingsButton = useRef<HTMLButtonElement>(null);
-  const toastTimer = useRef<number | null>(null);
-
-  useEffect(
-    () => () => {
-      if (toastTimer.current !== null) {
-        window.clearTimeout(toastTimer.current);
-      }
-    },
-    [],
-  );
-
-  useEffect(() => {
-    if (copyState === "fallback") {
-      fallbackInput.current?.select();
-    }
-  }, [copyState]);
 
   const checkName = (): boolean => {
     const result = validateDisplayName(displayName);
@@ -60,34 +56,24 @@ export function PreJoin() {
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    checkName();
+    submit(microphoneError ? false : microphoneEnabled);
+  };
+
+  const submit = (withMicrophone: boolean) => {
+    if (checkName()) {
+      onJoin({
+        displayName: displayName.trim(),
+        microphoneEnabled: withMicrophone,
+        input: selectedInput,
+        outputId: selectedOutputId,
+      });
+    }
   };
 
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
     window.requestAnimationFrame(() => settingsButton.current?.focus());
   }, []);
-
-  const handleCopy = async () => {
-    if (toastTimer.current !== null) {
-      window.clearTimeout(toastTimer.current);
-    }
-
-    try {
-      if (!navigator.clipboard?.writeText) {
-        throw new Error("Clipboard API unavailable");
-      }
-
-      await navigator.clipboard.writeText(window.location.href);
-      setCopyState("copied");
-      toastTimer.current = window.setTimeout(() => {
-        setCopyState("idle");
-        toastTimer.current = null;
-      }, 2000);
-    } catch {
-      setCopyState("fallback");
-    }
-  };
 
   return (
     <section className="screen centered-screen">
@@ -106,10 +92,11 @@ export function PreJoin() {
             value={displayName}
             autoComplete="nickname"
             autoFocus
-            aria-invalid={nameError ? "true" : undefined}
-            aria-describedby={nameError ? "display-name-error" : undefined}
+            aria-invalid={nameError || serverNameError ? "true" : undefined}
+            aria-describedby={nameError || serverNameError ? "display-name-error" : "display-name-hint"}
             onChange={(event) => {
               setDisplayName(event.target.value);
+              setServerNameError(false);
               if (nameWasChecked) {
                 const result = validateDisplayName(event.target.value);
                 setNameError(result.valid ? null : result.error);
@@ -118,9 +105,10 @@ export function PreJoin() {
             onBlur={checkName}
           />
 
-          {nameError && (
+          <p className="field-hint" id="display-name-hint">От 1 до 32 символов</p>
+          {(nameError || serverNameError) && (
             <p className="field-error" id="display-name-error" role="alert">
-              {errorMessages[nameError]}.
+              {nameError ? `${errorMessages[nameError]}.` : "Проверь никнейм: от 1 до 32 символов."}
             </p>
           )}
 
@@ -144,16 +132,25 @@ export function PreJoin() {
             </button>
           </div>
 
+          {microphoneError && (
+            <div className="microphone-warning" role="alert">
+              <p>{microphoneErrorText(microphoneError)}</p>
+              <button className="button button--secondary" type="button" onClick={() => submit(true)}>
+                Проверить снова
+              </button>
+            </div>
+          )}
+
           <div className="prejoin-actions">
             <button className="button button--primary" type="submit">
-              Войти в разговор
+              {microphoneError || !microphoneEnabled ? "Войти без микрофона" : "Войти в разговор"}
             </button>
             <button
               className="button button--icon"
               type="button"
               aria-label="Копировать ссылку"
               title="Копировать ссылку"
-              onClick={handleCopy}
+              onClick={copy}
             >
               <LinkIcon />
             </button>
@@ -170,32 +167,17 @@ export function PreJoin() {
           </div>
         </form>
 
-        {copyState === "fallback" && (
-          <div className="copy-fallback" role="status">
-            <p>Скопируй ссылку вручную:</p>
-            <input
-              ref={fallbackInput}
-              className="text-input text-input--compact"
-              value={window.location.href}
-              readOnly
-              aria-label="Ссылка на комнату"
-              onFocus={(event) => event.currentTarget.select()}
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="toast" data-visible={copyState === "copied"} role="status" aria-live="polite">
-        {copyState === "copied" && (
-          <>
-            <CheckIcon />
-            <span>Ссылка скопирована</span>
-          </>
-        )}
+        <InviteLinkFeedback copyState={copyState} />
       </div>
 
       {settingsOpen && (
-        <AudioSettingsDialog selectedInput={selectedInput} onInputChange={setSelectedInput} onClose={closeSettings} />
+        <AudioSettingsDialog
+          selectedInput={selectedInput}
+          onInputChange={setSelectedInput}
+          selectedOutputId={selectedOutputId}
+          onOutputChange={setSelectedOutputId}
+          onClose={closeSettings}
+        />
       )}
     </section>
   );

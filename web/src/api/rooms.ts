@@ -1,18 +1,11 @@
+import type { components } from "./schema";
+
 const roomStatuses = new Set(["open", "active", "finished", "expired"] as const);
 
-export type RoomStatus = "open" | "active" | "finished" | "expired";
-
-export interface CreateRoomResponse {
-  roomId: string;
-  inviteUrl: string;
-  expiresAt: string;
-  maxParticipants: 8;
-}
-
-export interface RoomResponse {
-  status: RoomStatus;
-  expiresAt: string;
-}
+export type RoomStatus = components["schemas"]["RoomStatus"];
+export type CreateRoomResponse = components["schemas"]["CreateRoomResponse"];
+export type RoomResponse = components["schemas"]["RoomResponse"];
+export type JoinRoomResponse = components["schemas"]["JoinRoomResponse"];
 
 export class ApiError extends Error {
   readonly code: string;
@@ -31,6 +24,7 @@ export async function createRoom(signal?: AbortSignal): Promise<CreateRoomRespon
     method: "POST",
     headers: { Accept: "application/json" },
     cache: "no-store",
+    referrerPolicy: "no-referrer",
     signal,
   });
 
@@ -62,6 +56,7 @@ export async function getRoom(inviteCode: string, signal?: AbortSignal): Promise
     method: "GET",
     headers: { Accept: "application/json" },
     cache: "no-store",
+    referrerPolicy: "no-referrer",
     signal,
   });
 
@@ -84,6 +79,53 @@ export async function getRoom(inviteCode: string, signal?: AbortSignal): Promise
   }
 
   return { status, expiresAt };
+}
+
+export async function joinRoom(
+  inviteCode: string,
+  displayName: string,
+  signal?: AbortSignal,
+): Promise<JoinRoomResponse> {
+  const body: components["schemas"]["JoinRoomRequest"] = { displayName };
+  const response = await fetch(`/api/v1/rooms/${encodeURIComponent(inviteCode)}/join`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    cache: "no-store",
+    referrerPolicy: "no-referrer",
+    body: JSON.stringify(body),
+    signal,
+  });
+  const payload = await parseResponse(response);
+  if (!response.ok) {
+    throw apiErrorFrom(payload, response.status);
+  }
+
+  if (!isRecord(payload)) {
+    throw new ApiError("invalid_response", response.status);
+  }
+
+  const { serverUrl, participantToken, participantIdentity } = payload;
+  if (
+    typeof serverUrl !== "string" ||
+    !isWebSocketURL(serverUrl) ||
+    typeof participantToken !== "string" ||
+    participantToken.length === 0 ||
+    typeof participantIdentity !== "string" ||
+    participantIdentity.length === 0
+  ) {
+    throw new ApiError("invalid_response", response.status);
+  }
+
+  return { serverUrl, participantToken, participantIdentity };
+}
+
+function isWebSocketURL(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return ["wss:", "ws:"].includes(url.protocol) && url.hostname !== "" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 async function parseResponse(response: Response): Promise<unknown> {

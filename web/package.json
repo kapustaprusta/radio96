@@ -8,6 +8,8 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
+    "generate": "node scripts/generate-api.mjs",
+    "generate:check": "node scripts/generate-api.mjs --check",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -17,6 +19,7 @@
     "check": "tsc --noEmit && vitest run && eslint . --max-warnings 0 && vite build"
   },
   "dependencies": {
+    "livekit-client": "^2.22.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
