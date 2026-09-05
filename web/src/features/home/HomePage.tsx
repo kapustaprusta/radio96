@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { createRoom } from "../../api/rooms";
-import { AlertIcon, ArrowRightIcon } from "../../components/Icons";
+import { AlertIcon } from "../../components/Icons";
 import { sameOriginRoomPath } from "../../routing";
 
 interface HomePageProps {
@@ -55,14 +55,6 @@ export function HomePage({ navigate }: HomePageProps) {
 
   return (
     <section className="screen home-screen">
-      <div className="lava" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-        <i />
-        <i />
-      </div>
-
       <div className="home-copy">
         <h1>Голосовой чат для игры с друзьями</h1>
         <p>Создай комнату до 8 человек и отправь ссылку друзьям.</p>
@@ -80,19 +72,18 @@ export function HomePage({ navigate }: HomePageProps) {
               Создаём комнату…
             </>
           ) : (
-            <>
-              {state === "error" ? "Попробовать снова" : "Создать комнату"}
-              <ArrowRightIcon />
-            </>
+            state === "error" ? "Попробовать снова" : "Создать комнату"
           )}
         </button>
 
-        {state === "error" && (
-          <div className="inline-alert" role="alert">
-            <AlertIcon />
-            <span>Не удалось создать комнату. Попробуй ещё раз.</span>
-          </div>
-        )}
+        <div className="home-feedback">
+          {state === "error" && (
+            <div className="inline-alert" role="alert">
+              <AlertIcon />
+              <span>Не удалось создать комнату. Попробуй ещё раз.</span>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

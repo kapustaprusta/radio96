@@ -1,4 +1,4 @@
-const waveHeights = [8, 13, 20, 12, 23, 16, 9, 18, 11];
+const waveHeights = [4, 13, 8, 20, 11, 6, 18, 9, 3];
 
 export function Brand() {
   return (
