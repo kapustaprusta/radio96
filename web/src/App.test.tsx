@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
-const inviteCode = "A".repeat(43);
+const inviteCode = "A".repeat(32);
 
 describe("home", () => {
   it("creates a room and navigates to its same-origin pre-join", async () => {
@@ -148,7 +148,7 @@ describe("pre-join", () => {
     expect(screen.getByText("Введи никнейм.")).toBeInTheDocument();
 
     await user.type(input, "  Влад  ");
-    await user.click(screen.getByRole("button", { name: "Войти в разговор" }));
+    await user.tab();
 
     expect(input).toHaveValue("Влад");
     expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();

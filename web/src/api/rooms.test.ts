@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, createRoom, getRoom } from "./rooms";
+import { ApiError, createRoom, getRoom, joinRoom } from "./rooms";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -12,7 +12,7 @@ describe("createRoom", () => {
       jsonResponse(
         {
           roomId: "room-id",
-          inviteUrl: `/rooms/${"A".repeat(43)}`,
+          inviteUrl: `/rooms/${"A".repeat(32)}`,
           expiresAt: "2026-09-04T10:00:00Z",
           maxParticipants: 8,
         },
@@ -50,7 +50,7 @@ describe("getRoom", () => {
       vi.fn().mockResolvedValue(jsonResponse({ status, expiresAt: "2026-09-04T10:00:00Z" }, 200)),
     );
 
-    await expect(getRoom("A".repeat(43))).resolves.toEqual({
+    await expect(getRoom("A".repeat(32))).resolves.toEqual({
       status,
       expiresAt: "2026-09-04T10:00:00Z",
     });
@@ -62,9 +62,38 @@ describe("getRoom", () => {
       vi.fn().mockResolvedValue(jsonResponse({ code: "room_not_found", message: "raw backend text" }, 404)),
     );
 
-    const request = getRoom("A".repeat(43));
+    const request = getRoom("A".repeat(32));
     await expect(request).rejects.toBeInstanceOf(ApiError);
     await expect(request).rejects.toMatchObject({ code: "room_not_found", status: 404 });
+  });
+});
+
+describe("joinRoom", () => {
+  const credentials = { serverUrl: "wss://voice.example", participantToken: "opaque-token", participantIdentity: "identity" };
+
+  it("uses an abortable POST with generated request shape for both listener and microphone sessions", async () => {
+    const request = vi.fn().mockResolvedValue(jsonResponse(credentials, 200));
+    vi.stubGlobal("fetch", request);
+    const controller = new AbortController();
+    await expect(joinRoom("A".repeat(32), "Влад 🎮", controller.signal)).resolves.toEqual(credentials);
+    expect(request).toHaveBeenCalledWith(`/api/v1/rooms/${"A".repeat(32)}/join`, expect.objectContaining({
+      method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
+      body: JSON.stringify({ displayName: "Влад 🎮" }), signal: controller.signal,
+      cache: "no-store", referrerPolicy: "no-referrer",
+    }));
+  });
+
+  it.each([
+    { name: "empty token", patch: { participantToken: "" } },
+    { name: "empty identity", patch: { participantIdentity: "" } },
+    { name: "non-websocket URL", patch: { serverUrl: "https://voice.example" } },
+    { name: "malformed URL", patch: { serverUrl: "not a URL" } },
+    { name: "URL with embedded credentials", patch: { serverUrl: "wss://name:secret@voice.example" } },
+  ])("rejects $name without leaking the credentials in the error", async ({ patch }) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ ...credentials, ...patch }, 200)));
+    await expect(joinRoom("A".repeat(32), "Влад")).rejects.toMatchObject({
+      code: "invalid_response", message: "radio96 API request failed",
+    });
   });
 });
 

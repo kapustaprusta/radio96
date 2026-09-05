@@ -1,4 +1,4 @@
-export const inviteCodePattern = /^[A-Za-z0-9_-]{43}$/;
+export const inviteCodePattern = /^[A-Za-z0-9]{32}$/;
 
 export type AppRoute =
   | { kind: "home" }
@@ -11,7 +11,7 @@ export function parseRoute(pathname: string): AppRoute {
   }
 
   const match = /^\/rooms\/([^/]+)$/.exec(pathname);
-  if (match && inviteCodePattern.test(match[1])) {
+  if (match && match[1].length === 32 && inviteCodePattern.test(match[1])) {
     return { kind: "room", inviteCode: match[1] };
   }
 
