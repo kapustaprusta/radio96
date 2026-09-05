@@ -148,7 +148,7 @@ describe("pre-join", () => {
     expect(screen.getByText("Введи никнейм.")).toBeInTheDocument();
 
     await user.type(input, "  Влад  ");
-    await user.click(screen.getByRole("button", { name: "Войти в разговор" }));
+    await user.tab();
 
     expect(input).toHaveValue("Влад");
     expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
