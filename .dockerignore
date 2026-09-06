@@ -4,8 +4,11 @@
 .vscode
 .env
 .env.*
+.secrets
 .DS_Store
 bin
 coverage.out
 tmp
 *.test
+web/dist
+web/node_modules

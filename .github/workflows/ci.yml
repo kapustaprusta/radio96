@@ -64,3 +64,15 @@ jobs:
 
       - name: Run frontend checks
         run: npm run check
+
+  production-images:
+    name: Production images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Build production images
+        run: make PRODUCTION_ENV_FILE=.env.production.example production-build

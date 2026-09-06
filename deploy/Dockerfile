@@ -2,7 +2,7 @@
 
 ARG GO_VERSION=1.27.1
 
-FROM golang:${GO_VERSION}-alpine3.24 AS builder
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine3.24 AS builder
 
 WORKDIR /src
 

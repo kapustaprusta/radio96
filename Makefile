@@ -6,8 +6,12 @@ GOLANGCI_LINT_VERSION_NUMBER := $(patsubst v%,%,$(GOLANGCI_LINT_VERSION))
 SQLC ?= bin/sqlc
 SQLC_VERSION ?= v1.31.1
 DOCKER_COMPOSE ?= docker compose
+CONTAINER_ENGINE ?= docker
 COMPOSE_FILE ?= deploy/compose.yaml
 COMPOSE_PROJECT_NAME ?= radio96
+PRODUCTION_COMPOSE_FILE ?= deploy/production/compose.yaml
+PRODUCTION_COMPOSE_PROJECT_NAME ?= radio96-production
+PRODUCTION_ENV_FILE ?= .env.production
 HTTP_PORT ?= 8080
 PACKAGES := ./...
 
@@ -20,13 +24,19 @@ endif
 
 .PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix generate sqlc-check tools ensure-golangci-lint ensure-sqlc tidy check ci clean
 .PHONY: docker-up docker-down docker-logs docker-ps docker-db
+.PHONY: production-config production-build production-push production-pull production-migrate production-up production-deploy
+.PHONY: production-down production-logs production-ps ensure-production-env
 
 COMPOSE = $(DOCKER_COMPOSE) --project-directory $(CURDIR) \
 	--project-name $(COMPOSE_PROJECT_NAME) --file $(COMPOSE_FILE)
 
+PRODUCTION_COMPOSE = $(DOCKER_COMPOSE) --project-directory $(CURDIR) \
+	--project-name $(PRODUCTION_COMPOSE_PROJECT_NAME) --env-file $(PRODUCTION_ENV_FILE) \
+	--file $(PRODUCTION_COMPOSE_FILE)
+
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} \
-	/^[a-zA-Z_-]+:.*## / {printf "  %-12s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	/^[a-zA-Z_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 run: ## Run the application
 	$(GO) run ./cmd/radio96
@@ -51,6 +61,41 @@ docker-logs: ## Follow application logs
 
 docker-ps: ## Show local container status
 	$(COMPOSE) ps
+
+ensure-production-env:
+	@test -f "$(PRODUCTION_ENV_FILE)" || { \
+		echo "$(PRODUCTION_ENV_FILE) is missing; copy .env.production.example and fill it in"; \
+		exit 1; \
+	}
+
+production-config: ensure-production-env ## Validate the production Compose configuration
+	$(PRODUCTION_COMPOSE) config --quiet
+
+production-build: production-config ## Build all production container images
+	CONTAINER_ENGINE="$(CONTAINER_ENGINE)" deploy/production/build-images.sh "$(PRODUCTION_ENV_FILE)"
+
+production-push: production-config ## Push production images to the configured registry
+	$(PRODUCTION_COMPOSE) push
+
+production-pull: production-config ## Pull production images from the configured registry
+	$(PRODUCTION_COMPOSE) pull
+
+production-migrate: production-config ## Apply production database migrations
+	$(PRODUCTION_COMPOSE) run --rm migrate
+
+production-up: production-migrate ## Run migrations and start the production services
+	$(PRODUCTION_COMPOSE) up --detach --no-build --wait app gateway
+
+production-deploy: production-pull production-up ## Pull images and deploy the production services
+
+production-down: ensure-production-env ## Stop production services without deleting TLS data
+	$(PRODUCTION_COMPOSE) down
+
+production-logs: ensure-production-env ## Follow production gateway and application logs
+	$(PRODUCTION_COMPOSE) logs --follow gateway app
+
+production-ps: ensure-production-env ## Show production container status
+	$(PRODUCTION_COMPOSE) ps
 
 test: ## Run unit tests
 	$(GO) test $(PACKAGES)
