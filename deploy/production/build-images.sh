@@ -8,18 +8,25 @@ if [ ! -f "$environment_file" ]; then
 	exit 1
 fi
 
+case "$environment_file" in
+	*/*) ;;
+	*) environment_file="./$environment_file" ;;
+esac
+
 # The production env file is operator-controlled and must use POSIX shell quoting.
 # shellcheck disable=SC1090
 . "$environment_file"
 
 : "${PRODUCTION_PLATFORM:?PRODUCTION_PLATFORM is required}"
-: "${PRODUCTION_APP_IMAGE:?PRODUCTION_APP_IMAGE is required}"
-: "${PRODUCTION_WEB_IMAGE:?PRODUCTION_WEB_IMAGE is required}"
-: "${PRODUCTION_MIGRATE_IMAGE:?PRODUCTION_MIGRATE_IMAGE is required}"
+: "${PRODUCTION_IMAGE_PREFIX:?PRODUCTION_IMAGE_PREFIX is required}"
+: "${PRODUCTION_RELEASE_TAG:?PRODUCTION_RELEASE_TAG is required}"
 
 container_engine=${CONTAINER_ENGINE:-docker}
 target_os=${PRODUCTION_PLATFORM%%/*}
 target_arch=${PRODUCTION_PLATFORM#*/}
+app_image="${PRODUCTION_IMAGE_PREFIX}/radio96-api:${PRODUCTION_RELEASE_TAG}"
+web_image="${PRODUCTION_IMAGE_PREFIX}/radio96-web:${PRODUCTION_RELEASE_TAG}"
+migrate_image="${PRODUCTION_IMAGE_PREFIX}/radio96-migrate:${PRODUCTION_RELEASE_TAG}"
 
 if [ "$target_os" = "$PRODUCTION_PLATFORM" ] || [ "$target_arch" = "$PRODUCTION_PLATFORM" ]; then
 	echo "PRODUCTION_PLATFORM must use the os/architecture format" >&2
@@ -45,17 +52,17 @@ esac
 	--build-arg "TARGETOS=$target_os" \
 	--build-arg "TARGETARCH=$target_arch" \
 	--file deploy/Dockerfile \
-	--tag "$PRODUCTION_APP_IMAGE" \
+	--tag "$app_image" \
 	.
 
 "$container_engine" build \
 	--platform "$PRODUCTION_PLATFORM" \
 	--file deploy/production/web.Dockerfile \
-	--tag "$PRODUCTION_WEB_IMAGE" \
+	--tag "$web_image" \
 	.
 
 "$container_engine" build \
 	--platform "$PRODUCTION_PLATFORM" \
 	--file deploy/production/migrate.Dockerfile \
-	--tag "$PRODUCTION_MIGRATE_IMAGE" \
+	--tag "$migrate_image" \
 	.

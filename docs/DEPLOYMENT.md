@@ -37,14 +37,16 @@ chmod 600 .env.production
 - `PRODUCTION_SITE_ADDRESS` — публичный домен, указывающий на VM;
 - `PRODUCTION_ACME_EMAIL` — контактный адрес для ACME-аккаунта Caddy;
 - `PRODUCTION_PLATFORM` — архитектуру VM (`linux/amd64` для стандартной x86-64 VM);
-- имена трёх образов — теги Yandex Container Registry на основе Git SHA;
+- `PRODUCTION_IMAGE_PREFIX` — namespace образов, например
+  `cr.yandex/<registry-id>`;
+- `PRODUCTION_RELEASE_TAG` — полный Git SHA релиза, общий для трёх образов;
 - `PRODUCTION_DATABASE_URL` — строку подключения через специальный FQDN master
   в формате `c-<cluster-id>.rw.mdb.yandexcloud.net`;
 - `PRODUCTION_LIVEKIT_*` — credentials проекта LiveKit Cloud.
 
-Не используйте `latest` для развёртывания. API, web и migration-образам следует
-назначать один Git commit tag и не переиспользовать его: тогда релиз можно
-воспроизвести или откатить.
+Не используйте `latest` или другой переиспользуемый тег для развёртывания. API,
+web и migration-образам автоматически назначается один `PRODUCTION_RELEASE_TAG`.
+Не переиспользуйте его: тогда релиз можно воспроизвести или откатить.
 Спецсимволы пароля PostgreSQL необходимо percent-encode перед добавлением в URL.
 Не добавляйте `.env.production` в Git и разрешите его чтение только пользователю,
 от имени которого выполняется деплой.
@@ -86,9 +88,14 @@ make production-config
 Авторизуйте Docker в Yandex Container Registry, затем выполните:
 
 ```bash
+git rev-parse HEAD
 make production-build
 make production-push
 ```
+
+Запишите полученный полный SHA в `PRODUCTION_RELEASE_TAG`. Скрипт соберёт образы
+`radio96-api`, `radio96-web` и `radio96-migrate` в `PRODUCTION_IMAGE_PREFIX` с
+одинаковым тегом.
 
 При использовании Podman передайте пути к установленным бинарникам:
 
@@ -98,7 +105,7 @@ make DOCKER_COMPOSE="/opt/podman/bin/podman compose" \
 make DOCKER_COMPOSE="/opt/podman/bin/podman compose" production-push
 ```
 
-Сборка создаёт отдельные API, web и migration-образы с именами и целевой
+Сборка создаёт отдельные API, web и migration-образы с единым тегом и целевой
 платформой из `.env.production`. Явная платформа не позволяет случайно отправить
 ARM-образ с Apple Silicon Mac на x86 VM. При несовпадении платформ у container
 engine должна быть настроена эмуляция; другой вариант — собирать образы на

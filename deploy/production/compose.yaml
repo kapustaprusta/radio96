@@ -6,7 +6,7 @@ x-logging: &default-logging
 
 services:
   migrate:
-    image: ${PRODUCTION_MIGRATE_IMAGE:-localhost/radio96-migrate:production}
+    image: ${PRODUCTION_IMAGE_PREFIX:?required}/radio96-migrate:${PRODUCTION_RELEASE_TAG:?required}
     platform: ${PRODUCTION_PLATFORM:-linux/amd64}
     user: "10001:10001"
     environment:
@@ -31,7 +31,7 @@ services:
     restart: "no"
 
   app:
-    image: ${PRODUCTION_APP_IMAGE:-localhost/radio96-api:production}
+    image: ${PRODUCTION_IMAGE_PREFIX:?required}/radio96-api:${PRODUCTION_RELEASE_TAG:?required}
     platform: ${PRODUCTION_PLATFORM:-linux/amd64}
     init: true
     environment:
@@ -68,7 +68,7 @@ services:
     stop_grace_period: 15s
 
   gateway:
-    image: ${PRODUCTION_WEB_IMAGE:-localhost/radio96-web:production}
+    image: ${PRODUCTION_IMAGE_PREFIX:?required}/radio96-web:${PRODUCTION_RELEASE_TAG:?required}
     platform: ${PRODUCTION_PLATFORM:-linux/amd64}
     init: true
     environment:
