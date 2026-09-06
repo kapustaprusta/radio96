@@ -14,6 +14,8 @@ import type { LocalAudioTrack, Participant, RemoteParticipant, RemoteTrack, Remo
 import { MediaError } from "./session";
 import type { CallParticipant, CallSnapshot, JoinCredentials, MediaSession } from "./session";
 
+const microphonePublishTimeoutMs = 15000;
+
 export function createMediaSession(): MediaSession {
   // SDK errors may contain credentials and participant metadata, including at warning level.
   setLogLevel("silent");
@@ -86,10 +88,6 @@ class LiveKitSession implements MediaSession {
 
     try {
       await room.connect(serverUrl, participantToken, { autoSubscribe: false });
-      this.activeRoom();
-      await this.withMicrophone(async () => {
-        if (this.microphone) await this.publishMicrophone(room, await this.getMicrophone(this.inputDevice));
-      });
       this.activeRoom();
       this.onConnected();
     } catch (error) {
@@ -240,15 +238,33 @@ class LiveKitSession implements MediaSession {
   }
 
   private async publishTrack(room: Room, track: LocalAudioTrack): Promise<void> {
+    const publication = room.localParticipant.publishTrack(track, { source: Track.Source.Microphone });
+    let timedOut = false;
+    let timer: number | undefined;
     try {
-      await room.localParticipant.publishTrack(track, { source: Track.Source.Microphone });
+      await new Promise<void>((resolve, reject) => {
+        timer = window.setTimeout(() => {
+          timedOut = true;
+          reject(new MediaError("microphone_unavailable"));
+        }, microphonePublishTimeoutMs);
+        void publication.then(() => resolve(), reject);
+      });
       this.activeRoom();
       this.microphonePublished = true;
     } catch (error) {
       this.stopMicrophone(track);
       if (this.microphone === track) this.microphone = null;
-      await room.localParticipant.unpublishTrack(track, true).catch(() => undefined);
+      if (timedOut) {
+        void publication.then(
+          () => room.localParticipant.unpublishTrack(track, true).catch(() => undefined),
+          () => undefined,
+        );
+      } else {
+        await room.localParticipant.unpublishTrack(track, true).catch(() => undefined);
+      }
       throw error;
+    } finally {
+      window.clearTimeout(timer);
     }
   }
 
