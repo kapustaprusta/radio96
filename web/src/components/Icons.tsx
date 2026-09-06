@@ -92,6 +92,29 @@ export function PlayIcon(props: IconProps) {
   );
 }
 
+export function StopIcon(props: IconProps) {
+  return <IconBase {...props}><rect x="6" y="6" width="12" height="12" rx="1" /></IconBase>;
+}
+
+export function LogOutIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5M21 12H9" />
+    </IconBase>
+  );
+}
+
+export function ClipboardOffIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+      <path d="m10 12 4 4m0-4-4 4" />
+    </IconBase>
+  );
+}
+
 export function UsersIcon(props: IconProps) {
   return (
     <IconBase {...props}>
@@ -120,6 +143,14 @@ export function CheckIcon(props: IconProps) {
   return (
     <IconBase {...props}>
       <path d="m5 12 4 4L19 6" />
+    </IconBase>
+  );
+}
+
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <IconBase {...props}>
+      <path d="m6 9 6 6 6-6" />
     </IconBase>
   );
 }

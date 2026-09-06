@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { Brand } from "./components/Brand";
+import { SearchIcon } from "./components/Icons";
 import { HomePage } from "./features/home/HomePage";
 import { RoomGate } from "./features/room/RoomGate";
 import { parseRoute } from "./routing";
@@ -28,7 +29,7 @@ export function App() {
   return (
     <div className="app-frame">
       <header className="app-header">
-        <Brand />
+        <Brand navigate={navigate} />
       </header>
       <main className="app-main">
         {route.kind === "home" && <HomePage navigate={navigate} />}
@@ -43,14 +44,16 @@ export function App() {
 
 function NotFound({ navigate }: { navigate: (path: string) => void }) {
   return (
-    <section className="screen centered-screen">
+    <section className="screen centered-screen system-screen">
       <div className="state-stack">
-        <p className="eyebrow">Ошибка 404</p>
+        <span className="state-icon" aria-hidden="true"><SearchIcon /></span>
         <h1>Такой страницы нет</h1>
         <p>Вернись на главную и создай голосовую комнату.</p>
-        <button className="button button--primary" type="button" onClick={() => navigate("/")}>
-          На главную
-        </button>
+        <div className="state-actions">
+          <button className="button button--primary" type="button" onClick={() => navigate("/")}>
+            На главную
+          </button>
+        </div>
       </div>
     </section>
   );

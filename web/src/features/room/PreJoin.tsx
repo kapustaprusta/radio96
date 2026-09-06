@@ -1,14 +1,16 @@
 import { useCallback, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
+import { IconButton } from "../../components/IconButton";
 import { LinkIcon, MicIcon, MicOffIcon, SettingsIcon } from "../../components/Icons";
 import { validateDisplayName } from "../../displayName";
 import type { DisplayNameError } from "../../displayName";
 import { AudioSettingsDialog } from "./AudioSettingsDialog";
 import type { AudioInputChoice } from "./AudioSettingsDialog";
 import { InviteLinkFeedback } from "./InviteLinkFeedback";
-import { defaultJoinPreferences, microphoneErrorText } from "./joinPreferences";
+import { defaultJoinPreferences } from "./joinPreferences";
 import type { JoinPreferences } from "./joinPreferences";
+import { MicrophoneAccess } from "./MicrophoneAccess";
 import { useInviteLink } from "./useInviteLink";
 
 const errorMessages: Record<DisplayNameError, string> = {
@@ -37,15 +39,15 @@ export function PreJoin({
   const [selectedInput, setSelectedInput] = useState<AudioInputChoice>(initialPreferences.input);
   const [selectedOutputId, setSelectedOutputId] = useState(initialPreferences.outputId);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { copyState, copy } = useInviteLink();
+  const { copyState, copy, dismiss } = useInviteLink();
   const settingsButton = useRef<HTMLButtonElement>(null);
 
-  const checkName = (): boolean => {
+  const checkName = (showEmptyError = true): boolean => {
     const result = validateDisplayName(displayName);
     setNameWasChecked(true);
 
     if (!result.valid) {
-      setNameError(result.error);
+      setNameError(result.error === "empty" && !showEmptyError ? null : result.error);
       return false;
     }
 
@@ -56,7 +58,7 @@ export function PreJoin({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    submit(microphoneError ? false : microphoneEnabled);
+    submit(microphoneEnabled);
   };
 
   const submit = (withMicrophone: boolean) => {
@@ -70,10 +72,18 @@ export function PreJoin({
     }
   };
 
+  const clearEmptyNameError = () => {
+    setNameError((error) => error === "empty" ? null : error);
+  };
+
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
     window.requestAnimationFrame(() => settingsButton.current?.focus());
   }, []);
+
+  if (microphoneError) {
+    return <MicrophoneAccess error={microphoneError} onRetry={() => submit(true)} onListen={() => submit(false)} />;
+  }
 
   return (
     <section className="screen centered-screen">
@@ -94,18 +104,20 @@ export function PreJoin({
             autoFocus
             aria-invalid={nameError || serverNameError ? "true" : undefined}
             aria-describedby={nameError || serverNameError ? "display-name-error" : "display-name-hint"}
+            onFocus={clearEmptyNameError}
+            onClick={clearEmptyNameError}
             onChange={(event) => {
               setDisplayName(event.target.value);
               setServerNameError(false);
               if (nameWasChecked) {
                 const result = validateDisplayName(event.target.value);
-                setNameError(result.valid ? null : result.error);
+                setNameError(result.valid || result.error === "empty" ? null : result.error);
               }
             }}
-            onBlur={checkName}
+            onBlur={() => checkName(false)}
           />
 
-          <p className="field-hint" id="display-name-hint">От 1 до 32 символов</p>
+          <p className="sr-only" id="display-name-hint">От 1 до 32 символов</p>
           {(nameError || serverNameError) && (
             <p className="field-error" id="display-name-error" role="alert">
               {nameError ? `${errorMessages[nameError]}.` : "Проверь никнейм: от 1 до 32 символов."}
@@ -132,42 +144,29 @@ export function PreJoin({
             </button>
           </div>
 
-          {microphoneError && (
-            <div className="microphone-warning" role="alert">
-              <p>{microphoneErrorText(microphoneError)}</p>
-              <button className="button button--secondary" type="button" onClick={() => submit(true)}>
-                Проверить снова
-              </button>
-            </div>
-          )}
-
           <div className="prejoin-actions">
             <button className="button button--primary" type="submit">
-              {microphoneError || !microphoneEnabled ? "Войти без микрофона" : "Войти в разговор"}
+              {microphoneEnabled ? "Войти в разговор" : "Войти без микрофона"}
             </button>
-            <button
-              className="button button--icon"
-              type="button"
+            <IconButton
               aria-label="Копировать ссылку"
-              title="Копировать ссылку"
+              tooltip="Копировать ссылку"
               onClick={copy}
             >
               <LinkIcon />
-            </button>
-            <button
+            </IconButton>
+            <IconButton
               ref={settingsButton}
-              className="button button--icon"
-              type="button"
               aria-label="Настроить звук"
-              title="Настроить звук"
+              tooltip="Настроить звук"
               onClick={() => setSettingsOpen(true)}
             >
               <SettingsIcon />
-            </button>
+            </IconButton>
           </div>
         </form>
 
-        <InviteLinkFeedback copyState={copyState} />
+        <InviteLinkFeedback copyState={copyState} onDismiss={dismiss} />
       </div>
 
       {settingsOpen && (

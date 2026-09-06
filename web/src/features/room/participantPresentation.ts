@@ -3,8 +3,8 @@ export function participantInitials(name: string): string {
 }
 
 export function participantColor(identity: string, isLocal: boolean): string {
-  if (isLocal) return "#a6aca4";
-  const colors = ["#d4b5dd", "#b7c9af", "#b4c6d1", "#d9c4a4", "#c1bcd8"];
+  if (isLocal) return "light-dark(#a6aca4, #737a74)";
+  const colors = ["#ff8069", "#86bbff", "#d9a3ff", "#74d6a2", "#ffbb5e", "#62d4e8", "#ff9fbd"];
   let hash = 0;
   for (const character of identity) hash = (hash * 31 + (character.codePointAt(0) ?? 0)) >>> 0;
   return colors[hash % colors.length];

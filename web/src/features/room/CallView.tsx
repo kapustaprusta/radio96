@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
-import { LinkIcon, MicIcon, MicOffIcon, PhoneOffIcon, SettingsIcon, VolumeIcon } from "../../components/Icons";
+import { IconButton } from "../../components/IconButton";
+import { LinkIcon, LogOutIcon, MicIcon, MicOffIcon, SettingsIcon, VolumeIcon } from "../../components/Icons";
 import { MediaError } from "../../media/session";
 import type { CallSnapshot, MediaSession } from "../../media/session";
 import { AudioSettingsDialog } from "./AudioSettingsDialog";
@@ -13,7 +14,6 @@ import { useInviteLink } from "./useInviteLink";
 interface CallViewProps {
   snapshot: CallSnapshot;
   session: MediaSession;
-  startedAt: number;
   restoredAt?: number;
   preferences: JoinPreferences;
   onPreferencesChange: Dispatch<SetStateAction<JoinPreferences>>;
@@ -21,7 +21,7 @@ interface CallViewProps {
 }
 
 export function CallView({
-  snapshot, session, startedAt, restoredAt, preferences, onPreferencesChange, onLeave,
+  snapshot, session, restoredAt, preferences, onPreferencesChange, onLeave,
 }: CallViewProps) {
   const [now, setNow] = useState(() => Date.now());
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -31,7 +31,7 @@ export function CallView({
   const settingsButton = useRef<HTMLButtonElement>(null);
   const changingMicrophone = useRef(false);
   const active = useRef(true);
-  const { copyState, copy } = useInviteLink();
+  const { copyState, copy, dismiss } = useInviteLink();
   const microphoneEnabled = snapshot.participants.find((participant) => participant.isLocal)?.microphoneEnabled ?? false;
 
   useEffect(() => {
@@ -70,19 +70,14 @@ export function CallView({
     setSettingsOpen(false);
     window.requestAnimationFrame(() => settingsButton.current?.focus());
   }, []);
-  const elapsed = Math.max(0, Math.floor((now - startedAt) / 1000));
-  const duration = `${Math.floor(elapsed / 60).toString().padStart(2, "0")}:${(elapsed % 60).toString().padStart(2, "0")}`;
   const banner = snapshot.connection === "reconnecting" ? "Связь прервалась. Переподключаемся…"
     : restoredAt !== undefined && now - restoredAt < 3000 ? "Связь восстановлена" : "";
 
   return (
     <section className="screen call-screen" aria-label="Разговор">
-      <header className="call-header">
+      <header className="sr-only">
         <h1>Голосовая комната</h1>
-        <div className="call-header__meta">
-          <span>{participantCountLabel(snapshot.participants.length)}</span>
-          <span aria-label={`Ты в разговоре ${duration}`}>{duration}</span>
-        </div>
+        <p>{participantCountLabel(snapshot.participants.length)}</p>
       </header>
       {banner && <div className="connection-banner" role="status">{banner}</div>}
       {(snapshot.audioPlaybackBlocked || audioError) && (
@@ -117,47 +112,37 @@ export function CallView({
                 <div className="participant__name" title={participant.name}>
                   {participant.name}{participant.isLocal && <span> · ты</span>}
                 </div>
-                <div className="participant__status">{status}</div>
               </article>
             );
           })}
         </div>
-        {snapshot.participants.length === 1 && (
-          <div className="solo-invite">
-            <p>Пока здесь только ты</p>
-            <button className="button button--secondary" type="button" onClick={copy}>Пригласить друзей</button>
-          </div>
-        )}
       </div>
       <div className="call-feedback">
         {microphoneError && <p className="field-error" role="alert">{microphoneError}</p>}
-        <InviteLinkFeedback copyState={copyState} />
+        <InviteLinkFeedback copyState={copyState} onDismiss={dismiss} />
       </div>
       <div className="call-controls" aria-label="Управление разговором">
-        <button
-          className="button button--icon call-microphone"
-          type="button"
+        <IconButton
+          className="call-microphone"
           role="switch"
           aria-checked={microphoneEnabled}
           aria-label={microphoneEnabled ? "Выключить микрофон" : "Включить микрофон"}
-          title={microphoneEnabled ? "Микрофон включён" : "Микрофон выключен"}
+          tooltip={microphoneEnabled ? "Микрофон включён" : "Микрофон выключен"}
           disabled={microphoneBusy}
           onClick={toggleMicrophone}
-        >{microphoneEnabled ? <MicIcon /> : <MicOffIcon />}</button>
-        <button className="button button--icon" type="button" aria-label="Копировать ссылку" title="Копировать ссылку" onClick={copy}>
+        >{microphoneEnabled ? <MicIcon /> : <MicOffIcon />}</IconButton>
+        <IconButton aria-label="Копировать ссылку" tooltip="Копировать ссылку" onClick={copy}>
           <LinkIcon />
-        </button>
-        <button
+        </IconButton>
+        <IconButton
           ref={settingsButton}
-          className="button button--icon"
-          type="button"
           aria-label="Настроить звук"
-          title="Настроить звук"
+          tooltip="Настройки звука"
           onClick={() => setSettingsOpen(true)}
-        ><SettingsIcon /></button>
-        <button className="button button--danger" type="button" onClick={onLeave} aria-label="Выйти из разговора">
-          <PhoneOffIcon />Выйти
-        </button>
+        ><SettingsIcon /></IconButton>
+        <IconButton onClick={onLeave} aria-label="Выйти из разговора" tooltip="Выйти из разговора">
+          <LogOutIcon />
+        </IconButton>
       </div>
       {settingsOpen && (
         <AudioSettingsDialog
