@@ -77,7 +77,11 @@ function fakeRoom() {
         tracks.set("microphone", { track });
         room.emit(RoomEvent.LocalTrackPublished);
       }),
-      unpublishTrack: vi.fn(async () => { tracks.clear(); }),
+      unpublishTrack: vi.fn(async (track: ReturnType<typeof audioTrack>) => {
+        for (const [id, publication] of tracks) {
+          if (publication.track === track) tracks.delete(id);
+        }
+      }),
     },
     remoteParticipants: new Map<string, ReturnType<typeof participant>>(),
     canPlaybackAudio: true,
@@ -130,11 +134,12 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   await session.disconnect();
 });
 
 describe("LiveKit voice session", () => {
-  it("publishes the prepared microphone once and subscribes only to audio", async () => {
+  it("connects before publishing the prepared microphone and subscribes only to audio", async () => {
     const remote = participant("remote", "Друг");
     const audio = publication();
     const video = publication(Track.Kind.Video);
@@ -145,6 +150,8 @@ describe("LiveKit voice session", () => {
     await session.prepareMicrophone("headset");
     expect(room.localParticipant.publishTrack).not.toHaveBeenCalled();
     await session.connect(credentials);
+    expect(room.localParticipant.publishTrack).not.toHaveBeenCalled();
+    await session.setMicrophoneEnabled(true, "headset");
     await session.setMicrophoneEnabled(false, "headset");
     expect(session.getSnapshot().participants[0].microphoneEnabled).toBe(false);
     await session.setMicrophoneEnabled(true, "headset");
@@ -310,24 +317,48 @@ describe("LiveKit voice session", () => {
     sdk.createLocalAudioTrack.mockResolvedValueOnce(track);
     await session.prepareMicrophone("default");
     await session.connect(credentials);
+    await session.setMicrophoneEnabled(true, "default");
     await session.setInputDevice("new-headset");
     expect(track.setDeviceId).toHaveBeenCalledWith("new-headset");
     expect(room.localParticipant.publishTrack).toHaveBeenCalledTimes(1);
   });
 
-  it("releases captured audio after publication fails and retries with a new microphone", async () => {
-    const track = audioTrack();
-    sdk.createLocalAudioTrack.mockResolvedValueOnce(track);
-    room.localParticipant.publishTrack.mockRejectedValueOnce(new Error("private publication failure"));
-    await session.connect(credentials);
-    await expect(session.setMicrophoneEnabled(true, "default")).rejects.toMatchObject({ code: "microphone_unavailable" });
-    expect(track.stop).toHaveBeenCalled();
-    expect(session.getSnapshot().connection).toBe("connected");
+  it.each(["rejects", "stalls"] as const)(
+    "keeps the call connected when microphone publication $outcome and allows retry",
+    async (outcome) => {
+      const track = audioTrack();
+      const replacement = audioTrack();
+      const stalled = deferred<void>();
+      sdk.createLocalAudioTrack.mockResolvedValueOnce(track).mockResolvedValueOnce(replacement);
+      if (outcome === "rejects") {
+        room.localParticipant.publishTrack.mockRejectedValueOnce(new Error("private publication failure"));
+      } else {
+        vi.useFakeTimers();
+        room.localParticipant.publishTrack.mockReturnValueOnce(stalled.promise);
+      }
+      await session.connect(credentials);
+      const enabling = session.setMicrophoneEnabled(true, "default");
+      const failure = expect(enabling).rejects.toMatchObject({ code: "microphone_unavailable" });
+      if (outcome === "stalls") {
+        await vi.advanceTimersByTimeAsync(0);
+        expect(room.localParticipant.publishTrack).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(15000);
+      }
+      await failure;
+      expect(track.stop).toHaveBeenCalled();
+      expect(session.getSnapshot().connection).toBe("connected");
 
-    await session.setMicrophoneEnabled(true, "default");
-    expect(sdk.createLocalAudioTrack).toHaveBeenCalledTimes(2);
-    expect(session.getSnapshot().participants[0].microphoneEnabled).toBe(true);
-  });
+      await session.setMicrophoneEnabled(true, "default");
+      expect(sdk.createLocalAudioTrack).toHaveBeenCalledTimes(2);
+      expect(session.getSnapshot().participants[0].microphoneEnabled).toBe(true);
+      expect(room.connect).toHaveBeenCalledTimes(1);
+      if (outcome === "stalls") {
+        stalled.resolve();
+        await Promise.resolve();
+        expect(room.localParticipant.unpublishTrack).toHaveBeenCalledWith(track, true);
+      }
+    },
+  );
 
   it("shows reconnecting without keeping stale speaking indicators", async () => {
     const remote = participant("remote");
@@ -372,6 +403,7 @@ describe("LiveKit voice session", () => {
     sdk.createLocalAudioTrack.mockResolvedValueOnce(track);
     await session.prepareMicrophone("default");
     await session.connect(credentials);
+    await session.setMicrophoneEnabled(true, "default");
     room.localParticipant.isSpeaking = true;
     const endedCapture = track.mediaStreamTrack;
     endedCapture.readyState = "ended";
@@ -390,6 +422,7 @@ describe("LiveKit voice session", () => {
     sdk.createLocalAudioTrack.mockResolvedValueOnce(track);
     await session.prepareMicrophone("default");
     await session.connect(credentials);
+    await session.setMicrophoneEnabled(true, "default");
     track.mediaStreamTrack.readyState = "ended";
     track.emit(TrackEvent.Ended);
     expect(session.getSnapshot().participants[0].microphoneEnabled).toBe(false);
@@ -402,6 +435,7 @@ describe("LiveKit voice session", () => {
     sdk.createLocalAudioTrack.mockResolvedValueOnce(track);
     await session.prepareMicrophone("default");
     await session.connect(credentials);
+    await session.setMicrophoneEnabled(true, "default");
     track.mediaStreamTrack.readyState = "ended";
     track.emit(TrackEvent.Ended);
     track.restartTrack.mockRejectedValueOnce(new DOMException("private hardware details", "NotFoundError"));
@@ -463,6 +497,7 @@ describe("session disposal races", () => {
     sdk.createLocalAudioTrack.mockResolvedValueOnce(track);
     await session.prepareMicrophone("default");
     await session.connect(credentials);
+    await session.setMicrophoneEnabled(true, "default");
     track.setDeviceId.mockReturnValueOnce(switching.promise);
     track.unmute.mockReturnValueOnce(unmuting.promise);
     const pending = operation === "input"
@@ -513,8 +548,9 @@ describe("session disposal races", () => {
     sdk.createLocalAudioTrack.mockResolvedValueOnce(track);
     room.localParticipant.publishTrack.mockReturnValueOnce(publishing.promise);
     await session.prepareMicrophone("default");
-    const connecting = session.connect(credentials);
-    const rejected = expect(connecting).rejects.toMatchObject({ code: "connection_failed" });
+    await session.connect(credentials);
+    const enabling = session.setMicrophoneEnabled(true, "default");
+    const rejected = expect(enabling).rejects.toMatchObject({ code: "connection_failed" });
     await vi.waitFor(() => expect(room.localParticipant.publishTrack).toHaveBeenCalled());
     await session.disconnect();
     publishing.resolve();
@@ -529,6 +565,7 @@ describe("session disposal races", () => {
     sdk.createLocalAudioTrack.mockResolvedValueOnce(track);
     await session.prepareMicrophone("default");
     await session.connect(credentials);
+    await session.setMicrophoneEnabled(true, "default");
     room.emit(RoomEvent.TrackSubscribed, audio, publication(), participant("remote"));
     const observer = vi.fn(() => { void session.disconnect(); });
     session.subscribe(observer);

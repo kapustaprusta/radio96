@@ -4,7 +4,6 @@ import type { CallSnapshot, JoinCredentials, MediaSession } from "../media/sessi
 
 export class FakeMediaSession implements MediaSession {
   private listeners = new Set<() => void>();
-  private microphonePrepared = false;
   snapshot: CallSnapshot = {
     connection: "connecting", participants: [], audioPlaybackBlocked: false, disconnectReason: null,
   };
@@ -16,13 +15,13 @@ export class FakeMediaSession implements MediaSession {
     for (const listener of this.listeners) listener();
   }
 
-  prepareMicrophone = vi.fn<MediaSession["prepareMicrophone"]>(async () => { this.microphonePrepared = true; });
+  prepareMicrophone = vi.fn<MediaSession["prepareMicrophone"]>(async () => undefined);
   connect = vi.fn(async (credentials: JoinCredentials) => {
     this.emit({
       connection: "connected",
       participants: [{
         identity: credentials.participantIdentity, name: "Влад", isLocal: true,
-        microphoneEnabled: this.microphonePrepared, speaking: false,
+        microphoneEnabled: false, speaking: false,
       }],
     });
   });

@@ -4,7 +4,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { IconButton } from "../../components/IconButton";
 import { LinkIcon, LogOutIcon, MicIcon, MicOffIcon, SettingsIcon, VolumeIcon } from "../../components/Icons";
 import { MediaError } from "../../media/session";
-import type { CallSnapshot, MediaSession } from "../../media/session";
+import type { CallSnapshot, MediaErrorCode, MediaSession } from "../../media/session";
 import { AudioSettingsDialog } from "./AudioSettingsDialog";
 import { InviteLinkFeedback } from "./InviteLinkFeedback";
 import type { JoinPreferences } from "./joinPreferences";
@@ -30,6 +30,7 @@ export function CallView({
   const [audioError, setAudioError] = useState(false);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const changingMicrophone = useRef(false);
+  const publishPreparedMicrophone = useRef(preferences.microphoneEnabled);
   const active = useRef(true);
   const { copyState, copy, dismiss } = useInviteLink();
   const microphoneEnabled = snapshot.participants.find((participant) => participant.isLocal)?.microphoneEnabled ?? false;
@@ -43,28 +44,30 @@ export function CallView({
     };
   }, []);
 
-  const toggleMicrophone = async () => {
+  const setMicrophoneEnabled = useCallback(async (enabled: boolean) => {
     if (changingMicrophone.current) return;
     changingMicrophone.current = true;
     setMicrophoneBusy(true);
     setMicrophoneError("");
     try {
-      await session.setMicrophoneEnabled(!microphoneEnabled, preferences.input.deviceId);
-      if (active.current) onPreferencesChange((current) => ({ ...current, microphoneEnabled: !microphoneEnabled }));
+      await session.setMicrophoneEnabled(enabled, preferences.input.deviceId);
+      if (active.current) onPreferencesChange((current) => ({ ...current, microphoneEnabled: enabled }));
     } catch (error: unknown) {
       if (active.current) {
         const code = error instanceof MediaError ? error.code : "microphone_unavailable";
-        setMicrophoneError(code === "microphone_denied"
-          ? "Разреши доступ к микрофону в настройках браузера. Ты можешь продолжать слушать."
-          : code === "microphone_not_found"
-            ? "Микрофон не найден. Подключи устройство и попробуй снова."
-            : "Не удалось переключить микрофон. Проверь устройство и попробуй снова.");
+        setMicrophoneError(microphoneErrorMessage(code));
       }
     } finally {
       changingMicrophone.current = false;
       if (active.current) setMicrophoneBusy(false);
     }
-  };
+  }, [onPreferencesChange, preferences.input.deviceId, session]);
+
+  useEffect(() => {
+    if (!publishPreparedMicrophone.current) return;
+    publishPreparedMicrophone.current = false;
+    void setMicrophoneEnabled(true);
+  }, [setMicrophoneEnabled]);
 
   const closeSettings = useCallback(() => {
     setSettingsOpen(false);
@@ -129,7 +132,7 @@ export function CallView({
           aria-label={microphoneEnabled ? "Выключить микрофон" : "Включить микрофон"}
           tooltip={microphoneEnabled ? "Микрофон включён" : "Микрофон выключен"}
           disabled={microphoneBusy}
-          onClick={toggleMicrophone}
+          onClick={() => setMicrophoneEnabled(!microphoneEnabled)}
         >{microphoneEnabled ? <MicIcon /> : <MicOffIcon />}</IconButton>
         <IconButton aria-label="Копировать ссылку" tooltip="Копировать ссылку" onClick={copy}>
           <LinkIcon />
@@ -162,4 +165,15 @@ export function CallView({
       )}
     </section>
   );
+}
+
+function microphoneErrorMessage(code: MediaErrorCode): string {
+  if (code === "microphone_denied") {
+    return "Разреши доступ к микрофону в настройках браузера. "
+      + "Ты можешь продолжать слушать.";
+  }
+  if (code === "microphone_not_found") {
+    return "Микрофон не найден. Подключи устройство и попробуй снова.";
+  }
+  return "Не удалось переключить микрофон. Проверь устройство и попробуй снова.";
 }
