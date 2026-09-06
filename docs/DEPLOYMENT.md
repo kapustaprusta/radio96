@@ -111,6 +111,26 @@ ARM-образ с Apple Silicon Mac на x86 VM. При несовпадении
 engine должна быть настроена эмуляция; другой вариант — собирать образы на
 x86-64 CI runner.
 
+### Автоматическая публикация из GitHub Actions
+
+После успешных backend-, frontend- и production-проверок для push в `main`
+GitHub Actions автоматически собирает и публикует три образа. Все они получают
+неизменяемый тег, равный полному `${GITHUB_SHA}` merge-коммита.
+
+Workflow использует OIDC и не хранит авторизованный ключ сервисного аккаунта.
+Для него должны быть настроены repository variables:
+
+- `YC_CI_SERVICE_ACCOUNT_ID` — ID отдельного сервисного аккаунта CI;
+- `YC_REGISTRY_ID` — ID Yandex Container Registry.
+
+Сервисному аккаунту достаточно роли `container-registry.images.pusher` на
+целевой реестр. Federated credential должен разрешать subject
+`repo:kapustaprusta/radio96:ref:refs/heads/main`. Запустить публикацию повторно
+можно вручную через `workflow_dispatch`, выбрав ветку `main`.
+
+Публикация образов не разворачивает их на VM. Для деплоя укажите опубликованный
+SHA в `PRODUCTION_RELEASE_TAG` на VM и выполните `make production-deploy`.
+
 ## Развёртывание на VM
 
 На VM нужны Docker с Compose plugin, сетевой доступ к Managed PostgreSQL и право
