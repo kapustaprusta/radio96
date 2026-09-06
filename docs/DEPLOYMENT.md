@@ -28,9 +28,12 @@ cp .env.production.example .env.production
 chmod 600 .env.production
 ```
 
-Файл читают Compose и скрипт сборки образов, поэтому значения должны быть
-оформлены по правилам POSIX shell. В частности, URL PostgreSQL следует оставить
-в одинарных кавычках, как в `.env.production.example`.
+При ручной сборке файл читают Compose и скрипт сборки образов, поэтому значения
+должны быть оформлены по правилам POSIX shell. В частности, URL PostgreSQL
+следует оставить в одинарных кавычках, как в `.env.production.example`.
+Deployment agent сам создаёт Compose-совместимую версию этого файла только для
+развёртывания на VM; её не следует передавать в `production-build` или
+`production-push`.
 
 Заполните:
 
@@ -123,27 +126,124 @@ Workflow использует OIDC и не хранит авторизованн
 Для него должны быть настроены repository variables:
 
 - `YC_CI_SERVICE_ACCOUNT_ID` — ID отдельного сервисного аккаунта CI;
-- `YC_REGISTRY_ID` — ID Yandex Container Registry.
+- `YC_REGISTRY_ID` — ID Yandex Container Registry;
+- `PRODUCTION_SITE_URL` — origin production-сайта с HTTPS, без завершающего `/`.
 
 Сервисному аккаунту достаточно роли `container-registry.images.pusher` на
 целевой реестр. Для текущего репозитория federated credential должен разрешать
 immutable subject
-`repo:kapustaprusta@47696782/radio96@1350017871:ref:refs/heads/main`.
+`repo:<owner>@<owner-id>/<repository>@<repository-id>:ref:refs/heads/main`.
 Запустить публикацию повторно можно вручную через `workflow_dispatch`, выбрав
 ветку `main`.
 
-Публикация образов не разворачивает их на VM. Для деплоя укажите опубликованный
-SHA в `PRODUCTION_RELEASE_TAG` на VM и выполните `make production-deploy`.
+Публикация образов и production-деплой разделены. Push в `main` только собирает
+образы. Развёртывание запускается отдельной кнопкой и всегда использует полный
+SHA выбранного коммита.
 
 ## Развёртывание на VM
 
-На VM нужны Docker с Compose plugin, сетевой доступ к Managed PostgreSQL и право
-скачивать настроенные registry-образы. Из интернета должны быть открыты 80/TCP,
-443/TCP и 443/UDP, а 22/TCP — только для доверенных адресов. Порт приложения 8080
-и PostgreSQL публиковать нельзя.
+На VM нужны Docker с Compose plugin, `git`, `curl`, `jq`, `make`, `flock` из
+`util-linux` и настроенный `yc`. Также нужны сетевой доступ к Managed PostgreSQL и
+право скачивать registry-образы. Из интернета должны быть открыты 80/TCP, 443/TCP
+и 443/UDP, а 22/TCP — только для доверенных адресов. Порт приложения 8080 и
+PostgreSQL публиковать нельзя.
 
-После размещения на VM `Makefile`, `deploy/production/compose.yaml`,
-`.env.production` и CA bundle базы выполните из корня deployment-каталога:
+### Установка deployment agent
+
+Deployment agent — это systemd timer под непривилегированным пользователем VM.
+Раз в две минуты он проверяет публичный GitHub API и ищет активный ручной запуск
+workflow `Deploy production`. Для найденного запроса агент:
+
+1. повторно проверяет статус workflow и SHA;
+2. убеждается, что SHA принадлежит `origin/main`;
+3. получает пароль PostgreSQL и LiveKit credentials из Lockbox;
+4. атомарно создаёт `.env.production` и обновляет CA bundle;
+5. скачивает три образа с тегом SHA, применяет миграции и обновляет контейнеры;
+6. подтверждает релиз через `/versionz` и готовность через `/readyz`.
+
+На VM обновите checkout до версии, в которой появился deployment agent. Для
+публичного репозитория используйте HTTPS remote: агенту не потребуется SSH-ключ.
+
+```bash
+cd "$HOME/radio96"
+git switch main
+git pull --ff-only origin main
+git remote set-url origin https://github.com/kapustaprusta/radio96.git
+cp deploy/production/deployer.env.example .env.production.deployer
+chmod 600 .env.production.deployer
+```
+
+Заполните `.env.production.deployer`. В нём хранятся только несекретные metadata:
+
+- GitHub repository и имя workflow;
+- абсолютные пути checkout, `.env.production`, state directory и CA bundle;
+- адрес сайта, ACME email, platform и registry prefix;
+- параметры подключения к PostgreSQL без пароля;
+- ID Lockbox-секретов и имена ключей для PostgreSQL и LiveKit;
+- имя профиля `yc`, которым пользуется runtime service account.
+
+Сами значения пароля PostgreSQL, `LIVEKIT_URL`, `LIVEKIT_API_KEY` и
+`LIVEKIT_API_SECRET` в этот файл не добавляются. Перед установкой проверьте
+конфигурацию, затем установите timer:
+
+```bash
+make PRODUCTION_DEPLOYER_CONFIG=.env.production.deployer production-deployer-config
+make PRODUCTION_DEPLOYER_CONFIG=.env.production.deployer \
+  PRODUCTION_DEPLOYER_USER="$(id -un)" \
+  production-deployer-install
+```
+
+Установщик копирует конфигурацию в `/etc/radio96/deployer.env` с правами `0640`,
+а root-owned копию агента — в `/usr/local/libexec/radio96`. Затем он создаёт
+service и timer и запускает timer. Благодаря отдельной копии неудачный checkout
+не лишит systemd исполняемого агента. Пользователь деплоя должен состоять в
+группе `docker`; его `yc`-профиль должен иметь доступ к Lockbox и Container
+Registry. `.env.production` после установки управляется агентом, вручную менять
+его не нужно. После изменения самого deployment agent установщик нужно запустить
+ещё раз; для обычных релизов это не требуется.
+
+Проверьте установку:
+
+```bash
+systemctl status radio96-production-deploy.timer
+systemctl list-timers radio96-production-deploy.timer
+sudo journalctl -u radio96-production-deploy.service -n 100 --no-pager
+```
+
+### Деплой по кнопке
+
+Откройте в GitHub `Actions` → `Deploy production` → `Run workflow`, выберите
+ветку `main` и подтвердите запуск. Workflow до 10 минут ждёт появления всех трёх
+образов с тегом текущего SHA, затем до 20 минут ждёт подтверждение от VM. Поэтому
+кнопку можно нажать, пока основной CI ещё публикует образы. Одновременно
+выполняется только один production-деплой.
+
+Endpoint `/versionz` возвращает SHA работающего релиза и запрещает кеширование.
+Он не содержит credentials или пользовательских данных. Успех workflow означает,
+что `/versionz` совпал с запрошенным SHA, а `/readyz` ответил успешно.
+
+Repository сейчас публичный, поэтому agent читает GitHub API без токена. При
+переводе репозитория в private этот способ перестанет работать: до переключения
+нужно добавить отдельную аутентификацию агента или self-hosted runner. Интервал
+опроса рассчитан на лимит публичного unauthenticated API.
+
+Автоматический rollback намеренно не выполняется: миграции могут быть
+необратимыми. При ошибке workflow останавливается, а причину следует смотреть в
+логе systemd. Последний успешный SHA сохраняется в state directory для ручного
+восстановления.
+
+### Ручной fallback
+
+При необходимости deployment agent можно запустить немедленно:
+
+```bash
+sudo systemctl start radio96-production-deploy.service
+sudo journalctl -u radio96-production-deploy.service -f
+```
+
+Старый ручной путь также остаётся доступен. Подготовьте `.env.production` и CA
+bundle согласно разделу выше, укажите опубликованный SHA в
+`PRODUCTION_RELEASE_TAG` и выполните из корня checkout:
 
 ```bash
 make production-deploy
@@ -172,7 +272,7 @@ make production-down
 
 После настройки DNS и TLS проверьте:
 
-1. `GET /healthz` и `GET /readyz` возвращают `200`.
+1. `GET /healthz` и `GET /readyz` возвращают `200`, а `/versionz` — SHA релиза.
 2. Главная и прямой переход на `/rooms/{inviteCode}` загружают приложение.
 3. В комнату можно войти из двух разных браузеров или устройств.
 4. Работают разрешение микрофона, mute, reconnect и выход из звонка.
