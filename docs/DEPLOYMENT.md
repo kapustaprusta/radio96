@@ -95,7 +95,9 @@ make production-push
 
 Запишите полученный полный SHA в `PRODUCTION_RELEASE_TAG`. Скрипт соберёт образы
 `radio96-api`, `radio96-web` и `radio96-migrate` в `PRODUCTION_IMAGE_PREFIX` с
-одинаковым тегом.
+одинаковым тегом. Команда публикации проверяет наличие каждого локального образа
+и явно отправляет все три образа в registry; отсутствие любого образа завершает
+команду ошибкой.
 
 При использовании Podman передайте пути к установленным бинарникам:
 
@@ -124,9 +126,11 @@ Workflow использует OIDC и не хранит авторизованн
 - `YC_REGISTRY_ID` — ID Yandex Container Registry.
 
 Сервисному аккаунту достаточно роли `container-registry.images.pusher` на
-целевой реестр. Federated credential должен разрешать subject
-`repo:kapustaprusta/radio96:ref:refs/heads/main`. Запустить публикацию повторно
-можно вручную через `workflow_dispatch`, выбрав ветку `main`.
+целевой реестр. Для текущего репозитория federated credential должен разрешать
+immutable subject
+`repo:kapustaprusta@47696782/radio96@1350017871:ref:refs/heads/main`.
+Запустить публикацию повторно можно вручную через `workflow_dispatch`, выбрав
+ветку `main`.
 
 Публикация образов не разворачивает их на VM. Для деплоя укажите опубликованный
 SHA в `PRODUCTION_RELEASE_TAG` на VM и выполните `make production-deploy`.
