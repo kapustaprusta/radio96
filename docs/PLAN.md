@@ -56,7 +56,9 @@ open → active → finished
   └──────────→ expired
 ```
 
-- Invite-код: 256 случайных бит; PostgreSQL хранит только SHA-256 hash.
+- Invite-код: 32 криптографически случайных символа Base62 (`A-Z`, `a-z`, `0-9`), регистр учитывается.
+  Около 190 бит энтропии; PostgreSQL хранит только SHA-256 hash.
+  Старый 43-символьный формат не поддерживается.
 - Создание:
   1. одной транзакцией записать Room в статусе `open` с детерминированным `livekit_room_name`;
   2. вернуть invite URL сразу после commit, не вызывая LiveKit;
@@ -65,7 +67,10 @@ open → active → finished
   - найти комнату по hash;
   - для `open` проверить срок действия и выдать JWT с room configuration `max_participants=8`;
   - для `active` проверить существование и заполненность через LiveKit; если медиакомната уже отсутствует, атомарно завершить Room и отказать в повторном входе;
-  - выдать JWT на 10 минут с уникальным identity, display name и правом публиковать только microphone track.
+  - выдать JWT на 10 минут с уникальным identity, display name и правом
+    публиковать только microphone track;
+  - наличие устройства и browser permission не являются условием входа:
+    участник может подключиться без публикации audio track.
 - `room_started` переводит комнату в `active`; `room_finished` — необратимо в `finished`.
 - Webhook проверяется Go-библиотекой LiveKit; ID событий сохраняются в `webhook_events` для идемпотентности.
 - Reconciler страхует недоставленные webhook:
@@ -78,9 +83,20 @@ open → active → finished
 
 OpenAPI — источник истины; TypeScript types/client генерируются для frontend.
 
-- `POST /api/v1/rooms` → `201` с `inviteUrl`, `expiresAt`, `maxParticipants`.
+- `POST /api/v1/rooms` → `201` с `roomId`, `inviteUrl`, `expiresAt`, `maxParticipants`.
+- `roomId` — непрозрачный application ID из `Room.ID()`: он не отображается как
+  название комнаты и не используется для построения ссылки.
+- При реализации HTTP adapter вернуть `roomId` из `Room.ID()` и включить поле в
+  сгенерированный TypeScript client и contract-тесты.
+- Отдельная ручка получения ссылки не нужна: при создании backend возвращает
+  `inviteUrl` вида `/rooms/{inviteCode}`, а после перехода frontend копирует
+  текущий URL. Из хранимого SHA-256 hash восстановить invite-код и ссылку нельзя.
 - `GET /api/v1/rooms/{inviteCode}` → публичный status комнаты без внутреннего LiveKit name.
-- `POST /api/v1/rooms/{inviteCode}/join` с display name → `serverUrl`, `participantToken`, `participantIdentity`.
+- `POST /api/v1/rooms/{inviteCode}/join` с display name → `serverUrl`, `participantToken`, `participantIdentity`;
+  наличие микрофона в запросе не передаётся и не проверяется backend.
+- [ ] Реализовать listener mode во frontend: при denied permission или
+  отсутствии устройства показывать «Войти без микрофона» и подключаться к
+  LiveKit без создания local audio track.
 - `POST /api/v1/livekit/webhook` → подписанные события LiveKit.
 - Единая ошибка: `{ "code": "...", "message": "..." }`.
 - Основные коды: `invalid_name`, `room_not_found`, `room_expired`, `room_finished`, `room_full`, `media_unavailable`.
@@ -94,17 +110,39 @@ OpenAPI — источник истины; TypeScript types/client генери�
 - HTTP: handlers и error mapping через `httptest`.
 - PostgreSQL: миграции, sqlc queries, webhook deduplication и конкурентные переходы через testcontainers.
 - Reconciler: две конкурентные реплики, advisory lock, истечение неиспользованных ссылок и пропущенный `room_finished`.
-- LiveKit smoke suite: автоматическое создание комнаты при первом входе, восемь участников, отказ девятому и завершение после выхода последнего.
-- Contract: OpenAPI validation и компиляция сгенерированного TypeScript client.
+- LiveKit smoke suite: автоматическое создание комнаты при первом входе, вход
+  без microphone track, восемь участников, отказ девятому и завершение после
+  выхода последнего.
+- Contract: OpenAPI validation, обязательные `roomId` и корректный
+  `/rooms/{inviteCode}` в create response, компиляция сгенерированного TypeScript client.
 - CI: `go test -race ./...`, sqlc verification, frontend typecheck/tests/build, Docker build.
 - Local environment: Docker Compose с PostgreSQL и migrate job; LiveKit остаётся Cloud.
 - Production: provider-neutral Go image, отдельный PostgreSQL и pre-deploy migrate job.
 - Поздний self-hosting меняет только LiveKit URL/credentials и webhook configuration.
 - После web-MVP тот же frontend упаковывается в Tauri для Windows с tray и global push-to-talk.
 
+### Backend implementation progress
+
+- [x] Bootstrap, domain/use cases, PostgreSQL repository и LiveKit media gateway.
+- [x] HTTP create/get/join с единым error mapping и contract-тестами OpenAPI.
+- [x] Composition root: PostgreSQL pool, use cases, media gateway, startup check и graceful shutdown.
+- [x] `/readyz` проверяет PostgreSQL, `/healthz` — только работоспособность процесса.
+- [x] Интеграционный тест HTTP → use case → PostgreSQL и проверка подписанного participant JWT.
+- [x] Локальный режим без LiveKit credentials: create/get доступны, join отвечает `media_unavailable`.
+- [ ] Webhook signature validation, deduplication и lifecycle use cases.
+- [ ] Reconciler, advisory lock и проверки одноразовости ссылки после завершения звонка.
+- [ ] Раздача собранного frontend из Go и общий production image.
+- [ ] LiveKit Cloud smoke suite с реальным аудио и конкурентным входом девятого участника.
+
+Голосовой UI развивается в отдельной frontend-ветке. До подключения webhook и
+reconciler HTTP-срез не гарантирует полный lifecycle медиасессии: успешная
+выдача JWT сама по себе не переводит комнату в `active` и не завершает её.
+
 ## Fixed Assumptions
 
 - До 8 равноправных участников, без аккаунтов и ведущего.
+- Участник может войти без микрофона, слышит остальных и учитывается в общем
+  лимите комнаты.
 - Одноразовая ссылка ожидает первый вход один час и не открывается повторно после завершения звонка.
 - Первая web-версия поддерживает desktop Chrome.
 - Backend сразу поддерживает горизонтальное масштабирование.
