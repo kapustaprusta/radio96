@@ -76,3 +76,50 @@ jobs:
 
       - name: Build production images
         run: make PRODUCTION_ENV_FILE=.env.production.example production-build
+
+  publish-production-images:
+    name: Publish production images
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs:
+      - checks
+      - web
+      - production-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PRODUCTION_ENV_FILE: .env.production.publish
+      YC_CI_SERVICE_ACCOUNT_ID: ${{ vars.YC_CI_SERVICE_ACCOUNT_ID }}
+      YC_REGISTRY_ID: ${{ vars.YC_REGISTRY_ID }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate publication configuration
+        run: |
+          : "${YC_CI_SERVICE_ACCOUNT_ID:?YC_CI_SERVICE_ACCOUNT_ID repository variable is required}"
+          : "${YC_REGISTRY_ID:?YC_REGISTRY_ID repository variable is required}"
+
+      - name: Log in to Yandex Container Registry
+        uses: yc-actions/yc-cr-login@ee42362bcacb854964afa3a3180ca8ae6dd388f8 # v3
+        with:
+          yc-sa-id: ${{ vars.YC_CI_SERVICE_ACCOUNT_ID }}
+
+      - name: Prepare production image metadata
+        run: |
+          cp .env.production.example "$PRODUCTION_ENV_FILE"
+          sed -i \
+            -e "s|^PRODUCTION_IMAGE_PREFIX=.*|PRODUCTION_IMAGE_PREFIX=cr.yandex/$YC_REGISTRY_ID|" \
+            -e "s|^PRODUCTION_RELEASE_TAG=.*|PRODUCTION_RELEASE_TAG=$GITHUB_SHA|" \
+            "$PRODUCTION_ENV_FILE"
+
+      - name: Build production images
+        run: make production-build
+
+      - name: Push production images
+        run: make production-push
