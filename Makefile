@@ -75,7 +75,7 @@ production-build: production-config ## Build all production container images
 	CONTAINER_ENGINE="$(CONTAINER_ENGINE)" deploy/production/build-images.sh "$(PRODUCTION_ENV_FILE)"
 
 production-push: production-config ## Push production images to the configured registry
-	$(PRODUCTION_COMPOSE) push
+	CONTAINER_ENGINE="$(CONTAINER_ENGINE)" deploy/production/push-images.sh "$(PRODUCTION_ENV_FILE)"
 
 production-pull: production-config ## Pull production images from the configured registry
 	$(PRODUCTION_COMPOSE) pull
