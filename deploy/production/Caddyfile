@@ -38,6 +38,12 @@
 		reverse_proxy app:8080
 	}
 
+	handle /versionz {
+		header Cache-Control "no-store"
+		header Content-Type "text/plain; charset=utf-8"
+		respond "{$PRODUCTION_RELEASE_TAG}" 200
+	}
+
 	handle /assets/* {
 		root * /srv
 		header Cache-Control "public, max-age=31536000, immutable"

@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll GitHub Actions for a radio96 production deployment request
+
+[Timer]
+OnBootSec=1min
+OnUnitInactiveSec=2min
+AccuracySec=15s
+RandomizedDelaySec=15s
+Unit=radio96-production-deploy.service
+
+[Install]
+WantedBy=timers.target

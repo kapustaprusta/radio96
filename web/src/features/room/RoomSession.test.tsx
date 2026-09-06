@@ -63,6 +63,7 @@ describe("join and call", () => {
     expect(sessions[0].connect).toHaveBeenCalledWith({
       serverUrl: "wss://voice.example", participantToken: "token-1", participantIdentity: "self-1",
     });
+    expect(sessions[0].setMicrophoneEnabled).toHaveBeenCalledTimes(withMicrophone ? 1 : 0);
     expect(fetchMock).toHaveBeenCalledWith(`/api/v1/rooms/${inviteCode}/join`, expect.objectContaining({
       method: "POST", body: JSON.stringify({ displayName: "Влад" }), cache: "no-store", referrerPolicy: "no-referrer",
     }));
@@ -72,6 +73,61 @@ describe("join and call", () => {
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
   });
+
+  it.each(["rejects", "stalls"] as const)(
+    "enters the call when prepared microphone publication $outcome",
+    async (outcome) => {
+      const session = new FakeMediaSession();
+      if (outcome === "rejects") {
+        session.setMicrophoneEnabled.mockRejectedValueOnce(new MediaError("microphone_unavailable"));
+      } else {
+        session.setMicrophoneEnabled.mockReturnValueOnce(new Promise<void>(() => undefined));
+      }
+      vi.mocked(createMediaSession).mockReturnValueOnce(session);
+      mockAPI();
+      render(<App />);
+      await join();
+
+      expect(await screen.findByRole("heading", { name: "Голосовая комната" })).toBeInTheDocument();
+      await waitFor(() => expect(session.setMicrophoneEnabled).toHaveBeenCalledWith(true, "default"));
+      expect(session.disconnect).not.toHaveBeenCalled();
+      expect(session.getSnapshot().connection).toBe("connected");
+      expect(screen.getByRole("switch", { name: "Включить микрофон" })).toHaveAttribute("aria-checked", "false");
+      if (outcome === "rejects") {
+        expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось переключить микрофон");
+      } else {
+        expect(screen.getByRole("switch", { name: "Включить микрофон" })).toBeDisabled();
+      }
+    },
+  );
+
+  it.each(["rejects", "stalls"] as const)(
+    "keeps the call open when enabling the microphone $outcome",
+    async (outcome) => {
+      const session = new FakeMediaSession();
+      vi.mocked(createMediaSession).mockReturnValueOnce(session);
+      mockAPI();
+      render(<App />);
+      const user = await join(false);
+      await screen.findByRole("heading", { name: "Голосовая комната" });
+      if (outcome === "rejects") {
+        session.setMicrophoneEnabled.mockRejectedValueOnce(new MediaError("microphone_unavailable"));
+      } else {
+        session.setMicrophoneEnabled.mockReturnValueOnce(new Promise<void>(() => undefined));
+      }
+
+      await user.click(screen.getByRole("switch", { name: "Включить микрофон" }));
+
+      expect(screen.getByRole("heading", { name: "Голосовая комната" })).toBeInTheDocument();
+      expect(session.disconnect).not.toHaveBeenCalled();
+      expect(session.getSnapshot().connection).toBe("connected");
+      if (outcome === "rejects") {
+        expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось переключить микрофон");
+      } else {
+        expect(screen.getByRole("switch", { name: "Включить микрофон" })).toBeDisabled();
+      }
+    },
+  );
 
   it.each<MediaErrorCode>(["microphone_denied", "microphone_not_found"])(
     "requires explicit listener choice after %s, then allows unmute without a new token", async (code) => {

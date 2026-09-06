@@ -1,0 +1,103 @@
+name: Deploy production
+run-name: Deploy production ${{ github.sha }}
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy production
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_SITE_URL }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PRODUCTION_SITE_URL: ${{ vars.PRODUCTION_SITE_URL }}
+      YC_CI_SERVICE_ACCOUNT_ID: ${{ vars.YC_CI_SERVICE_ACCOUNT_ID }}
+      YC_REGISTRY_ID: ${{ vars.YC_REGISTRY_ID }}
+
+    steps:
+      - name: Validate deployment request
+        run: |
+          set -eu
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "Production can only be deployed from main" >&2
+            exit 1
+          fi
+          : "${PRODUCTION_SITE_URL:?PRODUCTION_SITE_URL repository variable is required}"
+          : "${YC_CI_SERVICE_ACCOUNT_ID:?YC_CI_SERVICE_ACCOUNT_ID repository variable is required}"
+          : "${YC_REGISTRY_ID:?YC_REGISTRY_ID repository variable is required}"
+          case "$PRODUCTION_SITE_URL" in
+            https://*) ;;
+            *)
+              echo "PRODUCTION_SITE_URL must use https" >&2
+              exit 1
+              ;;
+          esac
+          if [ "${#GITHUB_SHA}" -ne 40 ]; then
+            echo "GITHUB_SHA must be a full lowercase Git commit SHA" >&2
+            exit 1
+          fi
+          case "$GITHUB_SHA" in
+            *[!0-9a-f]*)
+              echo "GITHUB_SHA must be a full lowercase Git commit SHA" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Log in to Yandex Container Registry
+        uses: yc-actions/yc-cr-login@ee42362bcacb854964afa3a3180ca8ae6dd388f8 # v3
+        with:
+          yc-sa-id: ${{ vars.YC_CI_SERVICE_ACCOUNT_ID }}
+
+      - name: Wait for release images
+        run: |
+          set -eu
+          attempt=1
+          while [ "$attempt" -le 60 ]; do
+            missing_images=""
+            for image_name in radio96-api radio96-web radio96-migrate; do
+              image="cr.yandex/$YC_REGISTRY_ID/$image_name:$GITHUB_SHA"
+              if ! docker manifest inspect "$image" >/dev/null 2>&1; then
+                missing_images="$missing_images $image_name"
+              fi
+            done
+            if [ -z "$missing_images" ]; then
+              echo "All production images are available for $GITHUB_SHA"
+              exit 0
+            fi
+            echo "Waiting for production images:$missing_images"
+            sleep 10
+            attempt=$((attempt + 1))
+          done
+          echo "Production images were not published within 10 minutes:$missing_images" >&2
+          exit 1
+
+      - name: Wait for the VM to deploy the release
+        run: |
+          set -eu
+          site_url=${PRODUCTION_SITE_URL%/}
+          attempt=1
+          while [ "$attempt" -le 120 ]; do
+            deployed_release=$(curl --fail --silent --show-error --max-time 5 "$site_url/versionz" 2>/dev/null || true)
+            if [ "$deployed_release" = "$GITHUB_SHA" ]; then
+              curl --fail --silent --show-error --max-time 5 "$site_url/readyz" >/dev/null
+              echo "Production is running release $GITHUB_SHA"
+              exit 0
+            fi
+            sleep 10
+            attempt=$((attempt + 1))
+          done
+          echo "The VM did not confirm release $GITHUB_SHA within 20 minutes" >&2
+          exit 1

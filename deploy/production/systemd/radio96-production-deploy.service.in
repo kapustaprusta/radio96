@@ -1,0 +1,23 @@
+[Unit]
+Description=Deploy a requested radio96 production release
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=@DEPLOY_USER@
+Group=@DEPLOY_GROUP@
+WorkingDirectory=@REPOSITORY_DIR@
+Environment="HOME=@DEPLOY_HOME@"
+Environment="PATH=@DEPLOY_PATH@"
+Environment="RADIO96_DEPLOYER_CONFIG=/etc/radio96/deployer.env"
+ExecStart=/usr/local/libexec/radio96/deploy-request.sh
+TimeoutStartSec=25min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictSUIDSGID=true
