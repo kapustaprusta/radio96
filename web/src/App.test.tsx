@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -81,12 +81,72 @@ describe("home", () => {
   });
 });
 
+describe("brand navigation", () => {
+  it.each([
+    { part: "icon", selector: ".brand__mark" },
+    { part: "wordmark", selector: ".brand__wordmark" },
+  ])("returns home when clicking the $part", async ({ selector }) => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", `/rooms/${inviteCode}`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ status: "open", expiresAt: "2026-09-04T10:00:00Z" }, 200)),
+    );
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "Вход в комнату" });
+    const link = screen.getByRole("link", { name: "radio96 — на главную" });
+    expect(link).toHaveAttribute("href", "/");
+    await user.click(link.querySelector<HTMLElement>(selector)!);
+
+    expect(screen.getByRole("heading", { name: "Голосовой чат для игры с друзьями" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+    expect(document.title).toBe("radio96");
+  });
+
+  it("returns home from a missing page using the keyboard", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", "/missing");
+    render(<App />);
+
+    await user.tab();
+    expect(screen.getByRole("link", { name: "radio96 — на главную" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    expect(screen.getByRole("heading", { name: "Голосовой чат для игры с друзьями" })).toBeInTheDocument();
+    expect(window.location.pathname).toBe("/");
+  });
+
+  it.each([
+    { name: "Ctrl-click", modifiers: { ctrlKey: true } },
+    { name: "Cmd-click", modifiers: { metaKey: true } },
+    { name: "Shift-click", modifiers: { shiftKey: true } },
+    { name: "Alt-click", modifiers: { altKey: true } },
+    { name: "middle-click", modifiers: { button: 1 } },
+  ])("preserves native navigation for $name", ({ modifiers }) => {
+    window.history.replaceState(null, "", "/missing");
+    render(<App />);
+    const nativeNavigation = vi.fn((event: Event) => {
+      expect(event.defaultPrevented).toBe(false);
+      // JSDOM cannot navigate; cancel the browser default after React handles the click.
+      event.preventDefault();
+    });
+    window.addEventListener("click", nativeNavigation, { once: true });
+
+    fireEvent.click(screen.getByRole("link", { name: "radio96 — на главную" }), modifiers);
+
+    expect(nativeNavigation).toHaveBeenCalledOnce();
+    expect(window.location.pathname).toBe("/missing");
+    expect(screen.getByRole("heading", { name: "Такой страницы нет" })).toBeInTheDocument();
+  });
+});
+
 describe("room gate", () => {
   it.each([
     { status: "open", heading: "Вход в комнату" },
     { status: "active", heading: "Вход в комнату" },
     { status: "expired", heading: "Ссылка больше не действует" },
-    { status: "finished", heading: "Разговор уже закончился" },
+    { status: "finished", heading: "Разговор завершён" },
   ])("renders $status room state", async ({ status, heading }) => {
     window.history.replaceState(null, "", `/rooms/${inviteCode}`);
     vi.stubGlobal(
@@ -132,7 +192,10 @@ describe("room gate", () => {
 });
 
 describe("pre-join", () => {
-  it("validates a display name after blur and submit", async () => {
+  it.each([
+    { name: "empty", value: "" },
+    { name: "whitespace-only", value: "   " },
+  ])("keeps $name nickname neutral before submitting", async ({ value }) => {
     const user = userEvent.setup();
     window.history.replaceState(null, "", `/rooms/${inviteCode}`);
     vi.stubGlobal(
@@ -142,15 +205,119 @@ describe("pre-join", () => {
 
     render(<App />);
     const input = await screen.findByRole("textbox", { name: "Никнейм" });
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
     await user.click(input);
+    if (value) await user.type(input, value);
     await user.tab();
 
-    expect(screen.getByText("Введи никнейм.")).toBeInTheDocument();
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("switch", { name: "Выключить микрофон" }));
+    await user.click(screen.getByRole("button", { name: "Настроить звук" }));
+    await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
 
-    await user.type(input, "  Влад  ");
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { name: "empty nickname via join button", value: "", action: "button" },
+    { name: "whitespace-only nickname via join button", value: "   ", action: "button" },
+    { name: "empty nickname via Enter", value: "", action: "keyboard" },
+    { name: "empty nickname in listener mode", value: "", action: "listener" },
+  ])("rejects $name only on submit and clears the error on edit", async ({ value, action }) => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", `/rooms/${inviteCode}`);
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: "open", expiresAt: "2026-09-04T10:00:00Z" }, 200));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    const input = await screen.findByRole("textbox", { name: "Никнейм" });
+    if (value) await user.type(input, value);
+
+    if (action === "keyboard") {
+      await user.click(input);
+      await user.keyboard("{Enter}");
+    } else {
+      if (action === "listener") await user.click(screen.getByRole("switch", { name: "Выключить микрофон" }));
+      await user.click(screen.getByRole("button", {
+        name: action === "listener" ? "Войти без микрофона" : "Войти в разговор",
+      }));
+    }
+
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent("Введи никнейм.");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await user.type(input, "Влад");
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
+    await user.clear(input);
     await user.tab();
 
-    expect(input).toHaveValue("Влад");
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { name: "click after button submit", value: "", submit: "button", focus: "click" },
+    { name: "click after Enter in the focused input", value: "", submit: "keyboard", focus: "click" },
+    { name: "keyboard focus after button submit", value: "", submit: "button", focus: "keyboard" },
+    { name: "click with whitespace-only input", value: "   ", submit: "button", focus: "click" },
+  ])("dismisses the empty-name error on $name without editing", async ({ value, submit, focus }) => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", `/rooms/${inviteCode}`);
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ status: "open", expiresAt: "2026-09-04T10:00:00Z" }, 200));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    const input = await screen.findByRole("textbox", { name: "Никнейм" });
+    if (value) await user.type(input, value);
+    if (submit === "keyboard") await user.keyboard("{Enter}");
+    else await user.click(screen.getByRole("button", { name: "Войти в разговор" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Введи никнейм.");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+
+    if (focus === "keyboard") {
+      await user.tab({ shift: true });
+      await user.tab({ shift: true });
+    } else await user.click(input);
+
+    expect(input).toHaveFocus();
+    expect(input).toHaveValue(value);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute("aria-invalid", "true");
+    expect(input).toHaveAttribute("aria-describedby", "display-name-hint");
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("alert")).toHaveTextContent("Введи никнейм.");
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { name: "trimmed nickname", value: "  Влад  ", expected: "Влад", invalid: false },
+    { name: "32 Unicode characters", value: "🎮".repeat(32), expected: "🎮".repeat(32), invalid: false },
+    { name: "33 Unicode characters", value: "🎮".repeat(33), expected: "🎮".repeat(33), invalid: true },
+  ])("preserves blur validation for $name", async ({ value, expected, invalid }) => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", `/rooms/${inviteCode}`);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(jsonResponse({ status: "open", expiresAt: "2026-09-04T10:00:00Z" }, 200)),
+    );
+    render(<App />);
+    const input = await screen.findByRole("textbox", { name: "Никнейм" });
+
+    await user.type(input, value);
+    await user.tab();
+    await user.click(input);
+
+    expect(input).toHaveValue(expected);
+    if (invalid) {
+      expect(input).toHaveAttribute("aria-invalid", "true");
+      expect(screen.getByRole("alert")).toHaveTextContent("Не больше 32 символов.");
+    } else {
+      expect(input).not.toHaveAttribute("aria-invalid", "true");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    }
     expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
   });
 

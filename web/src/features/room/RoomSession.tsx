@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, getRoom, joinRoom } from "../../api/rooms";
-import { PhoneOffIcon } from "../../components/Icons";
 import { createMediaSession } from "../../media/livekit";
 import { MediaError } from "../../media/session";
 import type { CallSnapshot, MediaSession } from "../../media/session";
@@ -9,8 +8,10 @@ import { CallView } from "./CallView";
 import { ConnectionProgress } from "./ConnectionProgress";
 import { defaultJoinPreferences } from "./joinPreferences";
 import type { JoinPreferences } from "./joinPreferences";
+import { MicrophoneAccess } from "./MicrophoneAccess";
 import { PreJoin } from "./PreJoin";
-import { CreateRoomButton, RoomError } from "./RoomError";
+import { RoomError } from "./RoomError";
+import { RoomLeft } from "./RoomLeft";
 
 type View =
   | { kind: "prejoin"; microphoneError?: string; nameRejected?: boolean }
@@ -139,14 +140,20 @@ export function RoomSession({ inviteCode, navigate }: { inviteCode: string; navi
   }
 
   if (view.kind === "progress") {
-    return <ConnectionProgress step={view.step} onCancel={() => { dispose(); setView({ kind: "prejoin" }); }} />;
+    const cancel = () => { dispose(); setView({ kind: "prejoin" }); };
+    if (view.step === 2 && preferences.microphoneEnabled) {
+      return <MicrophoneAccess pending onCancel={cancel} onListen={() => {
+        dispose();
+        void begin({ ...preferences, microphoneEnabled: false });
+      }} />;
+    }
+    return <ConnectionProgress onCancel={cancel} />;
   }
 
   if (view.kind === "call") {
     return (
       <CallView
         snapshot={view.snapshot}
-        startedAt={view.startedAt}
         restoredAt={view.restoredAt}
         session={view.session}
         preferences={preferences}
@@ -157,19 +164,7 @@ export function RoomSession({ inviteCode, navigate }: { inviteCode: string; navi
   }
 
   if (view.kind === "left") {
-    return (
-      <section className="screen centered-screen">
-        <div className="state-stack">
-          <span className="state-icon state-icon--ended" aria-hidden="true"><PhoneOffIcon /></span>
-          <h1>Ты вышел из разговора</h1>
-          <p>Можно войти снова, пока комната остаётся активной.</p>
-          <div className="state-actions">
-            <button className="button button--secondary" type="button" onClick={() => begin(preferences)}>Войти снова</button>
-            <CreateRoomButton navigate={navigate} />
-          </div>
-        </div>
-      </section>
-    );
+    return <RoomLeft onRejoin={() => begin(preferences)} onHome={() => navigate("/")} />;
   }
 
   return (

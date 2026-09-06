@@ -82,8 +82,11 @@ describe("join and call", () => {
       render(<App />);
       const user = await join();
 
-      expect(await screen.findByRole("button", { name: "Проверить снова" })).toBeInTheDocument();
-      expect(screen.getByRole("textbox", { name: "Никнейм" })).toHaveValue("Влад");
+      expect(await screen.findByRole("button", {
+        name: code === "microphone_not_found" ? "Проверить устройства" : "Проверить снова",
+      })).toBeInTheDocument();
+      expect(screen.getByRole("alert")).toHaveTextContent(code === "microphone_not_found"
+        ? "Микрофон не найден" : "Доступ к микрофону заблокирован");
       expect(fetchMock.mock.calls.every(([input]) => !String(input).endsWith("/join"))).toBe(true);
       expect(first.disconnect).toHaveBeenCalledOnce();
       await user.click(screen.getByRole("button", { name: "Войти без микрофона" }));
@@ -91,6 +94,9 @@ describe("join and call", () => {
       expect(await screen.findByRole("heading", { name: "Голосовая комната" })).toBeInTheDocument();
       const listener = sessions[0];
       expect(listener.prepareMicrophone).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledWith(`/api/v1/rooms/${inviteCode}/join`, expect.objectContaining({
+        body: JSON.stringify({ displayName: "Влад" }),
+      }));
       await user.click(screen.getByRole("switch", { name: "Включить микрофон" }));
       expect(listener.setMicrophoneEnabled).toHaveBeenCalledWith(true, "default");
       expect(listener.connect).toHaveBeenCalledOnce();
@@ -128,7 +134,7 @@ describe("join and call", () => {
     expect(sessions[0].prepareMicrophone).not.toHaveBeenCalled();
   });
 
-  it("blocks concurrent submits while a microphone request is pending and cancels cleanly", async () => {
+  it.each(["cancel", "home"] as const)("blocks duplicate joins and disposes pending microphone permission via %s", async (action) => {
     const pending = new FakeMediaSession();
     let resolveMicrophone: (() => void) | undefined;
     pending.prepareMicrophone.mockReturnValue(new Promise<void>((resolve) => { resolveMicrophone = resolve; }));
@@ -138,12 +144,20 @@ describe("join and call", () => {
     const user = userEvent.setup();
     await user.type(await screen.findByRole("textbox", { name: "Никнейм" }), "Влад");
     await user.dblClick(screen.getByRole("button", { name: "Войти в разговор" }));
-    await screen.findByRole("heading", { name: "Подключаем звук…" });
+    expect(await screen.findByRole("button", { name: "Ожидаем разрешение…" })).toBeDisabled();
     expect(createMediaSession).toHaveBeenCalledOnce();
-    await user.click(screen.getByRole("button", { name: "Отменить" }));
+    await user.click(action === "cancel"
+      ? screen.getByRole("button", { name: "Отменить" })
+      : screen.getByRole("link", { name: "radio96 — на главную" }));
     await act(async () => resolveMicrophone?.());
     expect(pending.disconnect).toHaveBeenCalledOnce();
-    expect(screen.getByRole("textbox", { name: "Никнейм" })).toHaveValue("Влад");
+    if (action === "cancel") {
+      expect(screen.getByRole("textbox", { name: "Никнейм" })).toHaveValue("Влад");
+    } else {
+      expect(screen.getByRole("heading", { name: "Голосовой чат для игры с друзьями" })).toBeInTheDocument();
+      expect(window.location.pathname).toBe("/");
+    }
+    expect(pending.connect).not.toHaveBeenCalled();
     expect(fetchMock.mock.calls.every(([input]) => !String(input).endsWith("/join"))).toBe(true);
   });
 
@@ -163,7 +177,49 @@ describe("join and call", () => {
     expect(stalled.disconnect).toHaveBeenCalledOnce();
   });
 
-  it.each(["leave", "unmount", "pagehide"] as const)("disposes media after %s", async (action) => {
+  it("switches to listening while permission is pending and ignores its late completion", async () => {
+    const pending = new FakeMediaSession();
+    let resolveMicrophone: (() => void) | undefined;
+    pending.prepareMicrophone.mockReturnValue(new Promise<void>((resolve) => { resolveMicrophone = resolve; }));
+    vi.mocked(createMediaSession).mockReturnValueOnce(pending);
+    const fetchMock = mockAPI();
+    render(<App />);
+    const user = await join();
+    expect(await screen.findByRole("button", { name: "Ожидаем разрешение…" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Войти без микрофона" }));
+    await screen.findByRole("heading", { name: "Голосовая комната" });
+    await act(async () => resolveMicrophone?.());
+
+    expect(pending.disconnect).toHaveBeenCalledOnce();
+    expect(pending.connect).not.toHaveBeenCalled();
+    expect(sessions[0].prepareMicrophone).not.toHaveBeenCalled();
+    expect(sessions[0].connect).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/join"))).toHaveLength(1);
+    expect(screen.getByRole("switch", { name: "Включить микрофон" })).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("keeps the call alive through manual link copying and restores focus", async () => {
+    mockAPI();
+    render(<App />);
+    const user = await join(false);
+    await screen.findByRole("heading", { name: "Голосовая комната" });
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new DOMException("", "NotAllowedError"));
+    const copy = screen.getByRole("button", { name: "Копировать ссылку" });
+    const participant = screen.getByRole("article");
+    await user.click(copy);
+    const dialog = await screen.findByRole("dialog", { name: "Буфер обмена недоступен" });
+    expect(within(dialog).getByRole("textbox", { name: "Ссылка на комнату" })).toHaveFocus();
+    expect(sessions[0].disconnect).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Вернуться" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("article")).toBe(participant);
+    expect(copy).toHaveFocus();
+    expect(sessions[0].connect).toHaveBeenCalledOnce();
+    expect(sessions[0].disconnect).not.toHaveBeenCalled();
+  });
+
+  it.each(["leave", "unmount", "pagehide", "home"] as const)("disposes media after %s", async (action) => {
     mockAPI();
     const { unmount } = render(<App />);
     const user = await join();
@@ -172,16 +228,21 @@ describe("join and call", () => {
     if (action === "leave") await user.click(screen.getByRole("button", { name: "Выйти из разговора" }));
     if (action === "unmount") unmount();
     if (action === "pagehide") act(() => window.dispatchEvent(new Event("pagehide")));
+    if (action === "home") await user.click(screen.getByRole("link", { name: "radio96 — на главную" }));
 
     expect(session.disconnect).toHaveBeenCalledOnce();
     expect(session.getSnapshot().participants).toEqual([]);
+    if (action === "home") {
+      expect(screen.getByRole("heading", { name: "Голосовой чат для игры с друзьями" })).toBeInTheDocument();
+      expect(window.location.pathname).toBe("/");
+    }
     if (action === "pagehide") {
       act(() => window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true })));
       expect(screen.getByRole("heading", { name: "Вход в комнату" })).toBeInTheDocument();
     }
     if (action === "leave") {
       expect(screen.getByRole("heading", { name: "Ты вышел из разговора" })).toBeInTheDocument();
-      await user.click(screen.getByRole("button", { name: "Войти снова" }));
+      await user.click(screen.getByRole("button", { name: "Подключиться снова" }));
       await screen.findByRole("heading", { name: "Голосовая комната" });
       expect(sessions[1].connect).toHaveBeenCalledWith(expect.objectContaining({ participantToken: "token-2" }));
     }
@@ -200,7 +261,8 @@ describe("join and call", () => {
       }], audioPlaybackBlocked: true,
     }));
     const tile = screen.getByRole("article", { name: `${longName}, говорит` });
-    expect(within(tile).getByText("говорит")).toBeInTheDocument();
+    expect(tile).toHaveAttribute("data-speaking", "true");
+    expect(within(tile).queryByText("говорит")).not.toBeInTheDocument();
     expect(screen.getByTitle(longName)).toBeInTheDocument();
     expect(screen.getByText("2 участника")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Включить звук" }));
@@ -215,8 +277,8 @@ describe("join and call", () => {
   });
 
   it.each([
-    { disconnectReason: "connection", title: "Соединение потеряно", canRejoin: true },
-    { disconnectReason: "finished", title: "Разговор закончился", canRejoin: false },
+    { disconnectReason: "connection", title: "Связь прервалась", canRejoin: true },
+    { disconnectReason: "finished", title: "Разговор завершён", canRejoin: false },
   ] as const)("shows $title on remote disconnection", async ({ disconnectReason, title, canRejoin }) => {
     mockAPI();
     render(<App />);
@@ -224,13 +286,13 @@ describe("join and call", () => {
     await screen.findByRole("heading", { name: "Голосовая комната" });
     act(() => sessions[0].emit({ connection: "disconnected", disconnectReason }));
     expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
-    expect(Boolean(screen.queryByRole("button", { name: "Войти снова" }))).toBe(canRejoin);
+    expect(Boolean(screen.queryByRole("button", { name: "Подключиться снова" }))).toBe(canRejoin);
   });
 
   it.each([
     { code: "room_not_found", status: 404, title: "Комната не найдена" },
     { code: "room_expired", status: 410, title: "Ссылка больше не действует" },
-    { code: "room_finished", status: 410, title: "Разговор уже закончился" },
+    { code: "room_finished", status: 410, title: "Разговор завершён" },
     { code: "room_full", status: 409, title: "Комната уже заполнена" },
     { code: "media_unavailable", status: 503, title: "Голосовой сервис временно недоступен" },
     { code: "internal_error", status: 500, title: "Что-то пошло не так" },
@@ -274,13 +336,13 @@ describe("join and call", () => {
       sessions[0].setOutputDevice.mockReturnValueOnce(new Promise<void>((resolve) => { completeOutput = resolve; }));
       await user.click(screen.getByRole("button", { name: "Настроить звук" }));
       const output = screen.getByRole("combobox", { name: "Выбрать динамики" });
-      await waitFor(() => expect(within(output).getAllByRole("option")).toHaveLength(2));
-      await user.selectOptions(output, "speakers");
+      await user.click(output);
+      await user.click(await screen.findByRole("option", { name: "Динамики" }));
       await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
       await user.click(screen.getByRole("switch", { name: "Выключить микрофон" }));
       await act(async () => completeOutput?.());
       await user.click(screen.getByRole("button", { name: "Выйти из разговора" }));
-      await user.click(screen.getByRole("button", { name: "Войти снова" }));
+      await user.click(screen.getByRole("button", { name: "Подключиться снова" }));
       await screen.findByRole("heading", { name: "Голосовая комната" });
 
       expect(sessions[1].prepareMicrophone).not.toHaveBeenCalled();

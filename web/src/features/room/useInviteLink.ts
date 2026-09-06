@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export function useInviteLink() {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "fallback">("idle");
@@ -29,5 +29,10 @@ export function useInviteLink() {
     }
   };
 
-  return { copyState, copy };
+  const dismiss = useCallback(() => {
+    window.clearTimeout(timer.current);
+    setCopyState("idle");
+  }, []);
+
+  return { copyState, copy, dismiss };
 }

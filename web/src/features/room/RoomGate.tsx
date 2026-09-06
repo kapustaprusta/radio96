@@ -42,7 +42,7 @@ export function RoomGate({ inviteCode, navigate }: RoomGateProps) {
     };
   }, [inviteCode, requestVersion]);
 
-  if (state.kind === "loading") return <ConnectionProgress step={1} />;
+  if (state.kind === "loading") return <ConnectionProgress checkingRoom />;
   if (state.kind === "ready") return <RoomSession inviteCode={inviteCode} navigate={navigate} />;
 
   return (

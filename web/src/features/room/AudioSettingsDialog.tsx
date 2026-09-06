@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
-import { CloseIcon, MicIcon, PlayIcon, VolumeIcon } from "../../components/Icons";
+import { CloseIcon, MicIcon, PlayIcon, StopIcon, VolumeIcon } from "../../components/Icons";
 import { playTestTone } from "./audioDeviceTests";
+import { AudioTestPanel } from "./AudioTestPanel";
+import { DeviceSelect } from "./DeviceSelect";
 
 export interface AudioInputChoice {
   deviceId: string;
@@ -101,6 +104,7 @@ export function AudioSettingsDialog({
     setPending(true);
     setMicError("");
     stopMicrophone();
+    if (test) speakerTest.current?.abort();
     let stream: MediaStream | undefined;
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new DOMException("", "NotFoundError");
@@ -145,17 +149,25 @@ export function AudioSettingsDialog({
   };
 
   const testSpeakers = async () => {
-    if (speakerTest.current) return;
+    if (speakerTest.current) { speakerTest.current.abort(); return; }
+    stopMicrophone();
+    setTesting(false);
+    setLevel(0);
     const controller = new AbortController();
     speakerTest.current = controller;
     setSpeakerTesting(true);
     setOutputError("");
     try { await playTestTone(selectedOutputId, controller.signal); }
-    catch { if (active.current) setOutputError("Не удалось проверить динамики."); }
-    finally { speakerTest.current = null; if (active.current) setSpeakerTesting(false); }
+    catch { if (active.current && !controller.signal.aborted) setOutputError("Не удалось проверить динамики."); }
+    finally {
+      if (speakerTest.current === controller) {
+        speakerTest.current = null;
+        if (active.current) setSpeakerTesting(false);
+      }
+    }
   };
 
-  return (
+  return createPortal(
     <div className="settings-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section ref={dialog} className="settings-dialog" role="dialog" aria-modal="true" aria-labelledby="audio-settings-title">
         <div className="settings-dialog__header">
@@ -169,16 +181,16 @@ export function AudioSettingsDialog({
               <div className="device-panel__title"><span className="device-panel__icon"><MicIcon /></span>Микрофон</div>
               {granted && (
                 <button className="button button--secondary device-panel__test" type="button"
-                  disabled={pending} onClick={() => {
+                  aria-pressed={testing} disabled={pending} onClick={() => {
                     if (testing) { stopMicrophone(); setTesting(false); setLevel(0); }
                     else void requestMicrophone(true);
-                  }}><PlayIcon />{testing ? "Остановить" : "Проверить"}</button>
+                  }}>{testing ? <StopIcon /> : <PlayIcon />}{testing ? "Остановить" : "Проверить"}</button>
               )}
             </div>
-            <label className="sr-only" htmlFor="audio-input">Выбрать микрофон</label>
-            <select className="device-select" id="audio-input" value={selectedInput.deviceId}
-              disabled={!granted || pending} onChange={async (event) => {
-                const input = inputs.find((device) => device.deviceId === event.target.value) ?? defaultInput;
+            <DeviceSelect id="audio-input" label="Выбрать микрофон" value={selectedInput.deviceId} options={inputs}
+              disabledLabel={granted ? undefined : "Нет доступа к микрофону"}
+              disabled={!granted || pending} onChange={async (deviceId) => {
+                const input = inputs.find((device) => device.deviceId === deviceId) ?? defaultInput;
                 setPending(true);
                 setMicError("");
                 stopMicrophone();
@@ -186,19 +198,15 @@ export function AudioSettingsDialog({
                 try { await onInputChange(input); }
                 catch { if (active.current) setMicError("Не удалось выбрать микрофон."); }
                 finally { if (active.current) setPending(false); }
-              }}>
-              {inputs.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
-            </select>
+              }} />
             {!granted ? (
               <div className="device-permission">
-                <strong>Разреши доступ к микрофону</strong>
-                <p>Без него друзья не услышат тебя</p>
                 <button className="button button--primary" type="button" disabled={pending} onClick={() => requestMicrophone(false)}>
                   {pending ? "Запрашиваем доступ…" : "Разрешить доступ"}
                 </button>
               </div>
-            ) : <p className="device-panel__status" data-state="ready">Доступ разрешён</p>}
-            {testing && <meter className="microphone-level" min={0} max={100} value={level} aria-label="Уровень микрофона" />}
+            ) : <p className="sr-only" role="status">Доступ разрешён</p>}
+            {testing && <AudioTestPanel level={level} />}
             {micError && <p className="field-error" role="alert">{micError}</p>}
           </section>
           {supportsOutputSelection && (
@@ -206,26 +214,26 @@ export function AudioSettingsDialog({
               <div className="device-panel__header">
                 <div className="device-panel__title"><span className="device-panel__icon"><VolumeIcon /></span>Динамики</div>
                 <button className="button button--secondary device-panel__test" type="button"
-                  disabled={speakerTesting} onClick={testSpeakers}><PlayIcon />{speakerTesting ? "Проверяем…" : "Проверить"}</button>
+                  aria-pressed={speakerTesting} disabled={pending || outputPending} onClick={testSpeakers}>
+                  {speakerTesting ? <StopIcon /> : <PlayIcon />}{speakerTesting ? "Остановить" : "Проверить"}
+                </button>
               </div>
-              <label className="sr-only" htmlFor="audio-output">Выбрать динамики</label>
-              <select className="device-select" id="audio-output" value={selectedOutputId} disabled={speakerTesting || outputPending}
-                onChange={async (event) => {
+              <DeviceSelect id="audio-output" label="Выбрать динамики" value={selectedOutputId} options={outputs}
+                disabled={speakerTesting || outputPending} onChange={async (deviceId) => {
                   setOutputError("");
                   setOutputPending(true);
-                  try { await onOutputChange(event.target.value); }
+                  try { await onOutputChange(deviceId); }
                   catch { if (active.current) setOutputError("Не удалось выбрать динамики."); }
                   finally { if (active.current) setOutputPending(false); }
-                }}>
-                {outputs.map((device) => <option key={device.deviceId} value={device.deviceId}>{device.label}</option>)}
-              </select>
+                }} />
+              {speakerTesting && <AudioTestPanel />}
               {outputError && <p className="field-error" role="alert">{outputError}</p>}
             </section>
           )}
         </div>
         <button className="button button--primary settings-dialog__done" type="button" onClick={onClose}>Готово</button>
       </section>
-    </div>
+    </div>, document.body,
   );
 }
 
