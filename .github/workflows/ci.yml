@@ -74,6 +74,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Check production scripts
+        run: make production-scripts-check
+
       - name: Build production images
         run: make PRODUCTION_ENV_FILE=.env.production.example production-build
 

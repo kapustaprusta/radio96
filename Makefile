@@ -12,6 +12,8 @@ COMPOSE_PROJECT_NAME ?= radio96
 PRODUCTION_COMPOSE_FILE ?= deploy/production/compose.yaml
 PRODUCTION_COMPOSE_PROJECT_NAME ?= radio96-production
 PRODUCTION_ENV_FILE ?= .env.production
+PRODUCTION_DEPLOYER_CONFIG ?= .env.production.deployer
+PRODUCTION_DEPLOYER_USER ?= $(shell id -un)
 HTTP_PORT ?= 8080
 PACKAGES := ./...
 
@@ -22,10 +24,12 @@ endif
 
 .DEFAULT_GOAL := help
 
-.PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix generate sqlc-check tools ensure-golangci-lint ensure-sqlc tidy check ci clean
+.PHONY: help run build test test-race test-cover fmt fmt-check vet lint lint-fix
+.PHONY: generate sqlc-check tools ensure-golangci-lint ensure-sqlc tidy check ci clean
 .PHONY: docker-up docker-down docker-logs docker-ps docker-db
 .PHONY: production-config production-build production-push production-pull production-migrate production-up production-deploy
-.PHONY: production-down production-logs production-ps ensure-production-env
+.PHONY: production-down production-logs production-ps ensure-production-env production-scripts-check
+.PHONY: production-deployer-config production-deployer-run production-deployer-install
 
 COMPOSE = $(DOCKER_COMPOSE) --project-directory $(CURDIR) \
 	--project-name $(COMPOSE_PROJECT_NAME) --file $(COMPOSE_FILE)
@@ -36,7 +40,7 @@ PRODUCTION_COMPOSE = $(DOCKER_COMPOSE) --project-directory $(CURDIR) \
 
 help: ## Show available targets
 	@awk 'BEGIN {FS = ":.*## "; printf "Usage: make <target>\n\nTargets:\n"} \
-	/^[a-zA-Z_-]+:.*## / {printf "  %-20s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	/^[a-zA-Z_-]+:.*## / {printf "  %-31s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 run: ## Run the application
 	$(GO) run ./cmd/radio96
@@ -96,6 +100,27 @@ production-logs: ensure-production-env ## Follow production gateway and applicat
 
 production-ps: ensure-production-env ## Show production container status
 	$(PRODUCTION_COMPOSE) ps
+
+production-scripts-check: ## Check production shell scripts and their tests
+	@for script in deploy/production/*.sh deploy/production/tests/*_test.sh; do \
+		test -x "$$script" || { echo "$$script is not executable"; exit 1; }; \
+		sh -n "$$script"; \
+	done
+	@for test_script in deploy/production/tests/*_test.sh; do \
+		sh "$$test_script"; \
+	done
+
+production-deployer-config: ## Validate the production deployer configuration
+	RADIO96_DEPLOYER_CONFIG="$(PRODUCTION_DEPLOYER_CONFIG)" \
+		deploy/production/deploy-request.sh --check-config
+
+production-deployer-run: ## Poll once for a pending production deployment
+	RADIO96_DEPLOYER_CONFIG="$(PRODUCTION_DEPLOYER_CONFIG)" \
+		deploy/production/deploy-request.sh
+
+production-deployer-install: ## Install and start the production deployer systemd timer
+	sudo deploy/production/install-deployer.sh \
+		"$(PRODUCTION_DEPLOYER_CONFIG)" "$(PRODUCTION_DEPLOYER_USER)" "$(CURDIR)"
 
 test: ## Run unit tests
 	$(GO) test $(PACKAGES)

@@ -129,6 +129,8 @@ OpenAPI — источник истины; TypeScript types/client генери�
 - [x] `/readyz` проверяет PostgreSQL, `/healthz` — только работоспособность процесса.
 - [x] Интеграционный тест HTTP → use case → PostgreSQL и проверка подписанного participant JWT.
 - [x] Локальный режим без LiveKit credentials: create/get доступны, join отвечает `media_unavailable`.
+- [x] Production-образы с immutable SHA-тегами и ручной deployment workflow
+  с VM systemd agent.
 - [ ] Webhook signature validation, deduplication и lifecycle use cases.
 - [ ] Reconciler, advisory lock и проверки одноразовости ссылки после завершения звонка.
 - [ ] Раздача собранного frontend из Go и общий production image.
