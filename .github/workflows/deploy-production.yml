@@ -1,8 +1,13 @@
 name: Deploy production
-run-name: Deploy production ${{ github.sha }}
+run-name: Deploy production ${{ inputs.release_sha || github.sha }}
 
 on:
   workflow_dispatch:
+    inputs:
+      release_sha:
+        description: Full release SHA; leave empty to deploy the current main revision
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -12,46 +17,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy:
-    name: Deploy production
+  prepare-release:
+    name: Prepare release images
     runs-on: ubuntu-latest
-    timeout-minutes: 35
-    environment:
-      name: production
-      url: ${{ vars.PRODUCTION_SITE_URL }}
+    timeout-minutes: 30
     permissions:
       contents: read
       id-token: write
     env:
-      PRODUCTION_SITE_URL: ${{ vars.PRODUCTION_SITE_URL }}
+      PRODUCTION_ENV_FILE: .env.production.publish
+      RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
+      REQUESTED_RELEASE_SHA: ${{ inputs.release_sha }}
       YC_CI_SERVICE_ACCOUNT_ID: ${{ vars.YC_CI_SERVICE_ACCOUNT_ID }}
       YC_REGISTRY_ID: ${{ vars.YC_REGISTRY_ID }}
 
     steps:
-      - name: Validate deployment request
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Validate release request
         run: |
           set -eu
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "Production can only be deployed from main" >&2
             exit 1
           fi
-          : "${PRODUCTION_SITE_URL:?PRODUCTION_SITE_URL repository variable is required}"
           : "${YC_CI_SERVICE_ACCOUNT_ID:?YC_CI_SERVICE_ACCOUNT_ID repository variable is required}"
           : "${YC_REGISTRY_ID:?YC_REGISTRY_ID repository variable is required}"
-          case "$PRODUCTION_SITE_URL" in
-            https://*) ;;
-            *)
-              echo "PRODUCTION_SITE_URL must use https" >&2
-              exit 1
-              ;;
-          esac
-          if [ "${#GITHUB_SHA}" -ne 40 ]; then
-            echo "GITHUB_SHA must be a full lowercase Git commit SHA" >&2
+          if [ "${#RELEASE_SHA}" -ne 40 ]; then
+            echo "RELEASE_SHA must be a full lowercase Git commit SHA" >&2
             exit 1
           fi
-          case "$GITHUB_SHA" in
+          case "$RELEASE_SHA" in
             *[!0-9a-f]*)
-              echo "GITHUB_SHA must be a full lowercase Git commit SHA" >&2
+              echo "RELEASE_SHA must be a full lowercase Git commit SHA" >&2
               exit 1
               ;;
           esac
@@ -61,28 +60,95 @@ jobs:
         with:
           yc-sa-id: ${{ vars.YC_CI_SERVICE_ACCOUNT_ID }}
 
-      - name: Wait for release images
+      - name: Determine whether images must be published
+        id: images
         run: |
           set -eu
-          attempt=1
-          while [ "$attempt" -le 60 ]; do
-            missing_images=""
-            for image_name in radio96-api radio96-web radio96-migrate; do
-              image="cr.yandex/$YC_REGISTRY_ID/$image_name:$GITHUB_SHA"
-              if ! docker manifest inspect "$image" >/dev/null 2>&1; then
-                missing_images="$missing_images $image_name"
-              fi
-            done
-            if [ -z "$missing_images" ]; then
-              echo "All production images are available for $GITHUB_SHA"
-              exit 0
+          available_images=""
+          missing_images=""
+          for image_name in radio96-api radio96-web radio96-migrate; do
+            image="cr.yandex/$YC_REGISTRY_ID/$image_name:$RELEASE_SHA"
+            if docker manifest inspect "$image" >/dev/null 2>&1; then
+              available_images="$available_images $image_name"
+            else
+              missing_images="$missing_images $image_name"
             fi
-            echo "Waiting for production images:$missing_images"
-            sleep 10
-            attempt=$((attempt + 1))
           done
-          echo "Production images were not published within 10 minutes:$missing_images" >&2
-          exit 1
+
+          if [ -z "$missing_images" ]; then
+            echo "build=false" >>"$GITHUB_OUTPUT"
+            echo "All production images already exist for $RELEASE_SHA"
+            exit 0
+          fi
+          if [ -n "$REQUESTED_RELEASE_SHA" ]; then
+            echo "Selected release images are missing for $RELEASE_SHA:$missing_images" >&2
+            exit 1
+          fi
+          if [ -n "$available_images" ]; then
+            echo "The current release has an incomplete image set." >&2
+            echo "Available:$available_images" >&2
+            echo "Missing:$missing_images" >&2
+            exit 1
+          fi
+
+          echo "build=true" >>"$GITHUB_OUTPUT"
+          echo "No production images exist for $RELEASE_SHA; publishing a new release"
+
+      - name: Prepare production image metadata
+        if: steps.images.outputs.build == 'true'
+        run: |
+          cp .env.production.example "$PRODUCTION_ENV_FILE"
+          sed -i \
+            -e "s|^PRODUCTION_IMAGE_PREFIX=.*|PRODUCTION_IMAGE_PREFIX=cr.yandex/$YC_REGISTRY_ID|" \
+            -e "s|^PRODUCTION_RELEASE_TAG=.*|PRODUCTION_RELEASE_TAG=$RELEASE_SHA|" \
+            "$PRODUCTION_ENV_FILE"
+
+      - name: Build production images
+        if: steps.images.outputs.build == 'true'
+        run: make production-build
+
+      - name: Push production images
+        if: steps.images.outputs.build == 'true'
+        run: make production-push
+
+      - name: Verify release images
+        run: |
+          set -eu
+          for image_name in radio96-api radio96-web radio96-migrate; do
+            image="cr.yandex/$YC_REGISTRY_ID/$image_name:$RELEASE_SHA"
+            if ! docker manifest inspect "$image" >/dev/null 2>&1; then
+              echo "Production image is not available: $image" >&2
+              exit 1
+            fi
+          done
+          echo "Release images are ready for $RELEASE_SHA"
+
+  deploy:
+    name: Deploy production
+    needs: prepare-release
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_SITE_URL }}
+    permissions:
+      contents: read
+    env:
+      PRODUCTION_SITE_URL: ${{ vars.PRODUCTION_SITE_URL }}
+      RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
+
+    steps:
+      - name: Validate deployment target
+        run: |
+          set -eu
+          : "${PRODUCTION_SITE_URL:?PRODUCTION_SITE_URL repository variable is required}"
+          case "$PRODUCTION_SITE_URL" in
+            https://*) ;;
+            *)
+              echo "PRODUCTION_SITE_URL must use https" >&2
+              exit 1
+              ;;
+          esac
 
       - name: Wait for the VM to deploy the release
         run: |
@@ -91,13 +157,13 @@ jobs:
           attempt=1
           while [ "$attempt" -le 120 ]; do
             deployed_release=$(curl --fail --silent --show-error --max-time 5 "$site_url/versionz" 2>/dev/null || true)
-            if [ "$deployed_release" = "$GITHUB_SHA" ]; then
+            if [ "$deployed_release" = "$RELEASE_SHA" ]; then
               curl --fail --silent --show-error --max-time 5 "$site_url/readyz" >/dev/null
-              echo "Production is running release $GITHUB_SHA"
+              echo "Production is running release $RELEASE_SHA"
               exit 0
             fi
             sleep 10
             attempt=$((attempt + 1))
           done
-          echo "The VM did not confirm release $GITHUB_SHA within 20 minutes" >&2
+          echo "The VM did not confirm release $RELEASE_SHA within 20 minutes" >&2
           exit 1
