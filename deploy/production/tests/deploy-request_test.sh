@@ -25,6 +25,7 @@ cp "$repository_directory/deploy/production/render-env.sh" \
 chmod +x "$deployment_repository/deploy/production/render-env.sh"
 
 release_sha=0123456789abcdef0123456789abcdef01234567
+request_sha=fedcba9876543210fedcba9876543210fedcba98
 run_id=123456789
 command_log="$test_directory/commands.log"
 make_log="$test_directory/make.log"
@@ -73,7 +74,7 @@ done
 [ -r "$environment_file" ]
 # shellcheck disable=SC1090
 . "$environment_file"
-[ "$PRODUCTION_RELEASE_TAG" = "$RADIO96_TEST_SHA" ]
+[ "$PRODUCTION_RELEASE_TAG" = "$RADIO96_TEST_RELEASE_SHA" ]
 : >"$RADIO96_TEST_DEPLOYED_MARKER"
 EOF
 
@@ -125,15 +126,34 @@ done
 
 case "$url" in
 	https://api.github.com/repos/owner/radio96/actions/workflows/deploy-production.yml/runs\?*)
-		printf '{"workflow_runs":[{"id":%s,' "$RADIO96_TEST_RUN_ID"
+		printf '{"workflow_runs":[{"id":987654321,'
 		printf '"status":"in_progress","event":"workflow_dispatch",'
-		printf '"head_branch":"main","head_sha":"%s",' "$RADIO96_TEST_SHA"
+		printf '"display_title":"Deploy production latest",'
+		printf '"head_branch":"main","head_sha":"%s",' "$RADIO96_TEST_REQUEST_SHA"
+		printf '"head_repository":{"full_name":"owner/radio96"}},{"id":%s,' "$RADIO96_TEST_RUN_ID"
+		printf '"status":"in_progress","event":"workflow_dispatch",'
+		printf '"display_title":"Deploy production %s",' "$RADIO96_TEST_RELEASE_SHA"
+		printf '"head_branch":"main","head_sha":"%s",' "$RADIO96_TEST_REQUEST_SHA"
 		printf '"head_repository":{"full_name":"owner/radio96"}}]}\n'
+		;;
+	https://api.github.com/repos/owner/radio96/actions/runs/*/jobs\?*)
+		preparation_status=${RADIO96_TEST_PREPARATION_STATUS:-completed}
+		preparation_conclusion=null
+		if [ "$preparation_status" = completed ]; then
+			preparation_conclusion='"success"'
+		fi
+		printf '{"jobs":['
+		printf '{"name":"Prepare release images","status":"%s","conclusion":%s},' \
+			"$preparation_status" "$preparation_conclusion"
+		printf '{"name":"Deploy production","status":"in_progress","conclusion":null,'
+		printf '"steps":[{"name":"Validate deployment target","status":"completed","conclusion":"success"},'
+		printf '{"name":"Wait for VM to deploy the release","status":"in_progress","conclusion":null}]}]}\n'
 		;;
 	https://api.github.com/repos/owner/radio96/actions/runs/*)
 		printf '{"id":%s,"status":"in_progress",' "$RADIO96_TEST_RUN_ID"
 		printf '"event":"workflow_dispatch","head_branch":"main",'
-		printf '"head_sha":"%s",' "$RADIO96_TEST_SHA"
+		printf '"display_title":"Deploy production %s",' "$RADIO96_TEST_RELEASE_SHA"
+		printf '"head_sha":"%s",' "$RADIO96_TEST_REQUEST_SHA"
 		printf '"head_repository":{"full_name":"owner/radio96"}}\n'
 		;;
 	https://storage.example/CA.pem)
@@ -142,7 +162,7 @@ case "$url" in
 		;;
 	https://radio96.example.com/versionz)
 		if [ -f "$RADIO96_TEST_DEPLOYED_MARKER" ]; then
-			printf '%s' "$RADIO96_TEST_SHA"
+			printf '%s' "$RADIO96_TEST_RELEASE_SHA"
 		else
 			printf '%s' 'previous-release'
 		fi
@@ -199,7 +219,18 @@ export RADIO96_TEST_MAKE_LOG="$make_log"
 export RADIO96_TEST_YC_LOG="$yc_log"
 export RADIO96_TEST_DEPLOYED_MARKER="$deployed_marker"
 export RADIO96_TEST_RUN_ID="$run_id"
-export RADIO96_TEST_SHA="$release_sha"
+export RADIO96_TEST_RELEASE_SHA="$release_sha"
+export RADIO96_TEST_REQUEST_SHA="$request_sha"
+export RADIO96_TEST_PREPARATION_STATUS=in_progress
+
+preparation_output=$("$deployer" 2>&1)
+case "$preparation_output" in
+	*"Deployment request $run_id is not ready for the VM rollout"*) ;;
+	*) fail "deployment did not wait for successful image preparation" ;;
+esac
+[ ! -s "$make_log" ] || fail "deployment started before release images were ready"
+
+export RADIO96_TEST_PREPARATION_STATUS=completed
 
 deployer_output=$("$deployer" 2>&1)
 case "$deployer_output" in
@@ -209,7 +240,7 @@ esac
 [ "$(sed -n '1p' "$state_directory/last-request")" = "$run_id" ] || fail "workflow run ID was not persisted"
 [ "$(sed -n '1p' "$state_directory/current-release")" = "$release_sha" ] || fail "release SHA was not persisted"
 grep -q "fetch --quiet origin main" "$command_log" || fail "origin/main was not fetched"
-grep -q "switch --detach --force $release_sha" "$command_log" || fail "requested release was not checked out"
+grep -q "switch --detach --force $request_sha" "$command_log" || fail "deployment tooling revision was not checked out"
 grep -q "production-deploy" "$make_log" || fail "production deployment target was not invoked"
 
 : >"$make_log"
