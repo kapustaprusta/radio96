@@ -53,20 +53,45 @@ github_get() {
 		"https://api.github.com/repos/${RADIO96_GITHUB_REPOSITORY}/${github_path}"
 }
 
+deployment_title_prefix='Deploy production '
+preparation_job_name='Prepare release images'
+deployment_job_name='Deploy production'
+deployment_wait_step_name='Wait for VM to deploy the release'
+
 request_is_active() {
 	request_json=$(github_get "actions/runs/$run_id")
 
 	# shellcheck disable=SC2016
 	printf '%s\n' "$request_json" | "$jq_bin" --exit-status \
 		--arg run_id "$run_id" \
-		--arg release_sha "$release_sha" \
+		--arg request_sha "$request_sha" \
+		--arg expected_title "${deployment_title_prefix}${release_sha}" \
 		--arg repository "$RADIO96_GITHUB_REPOSITORY" \
 		'(.id | tostring) == $run_id and
 		 .status == "in_progress" and
 		 .event == "workflow_dispatch" and
 		 .head_branch == "main" and
-		 .head_sha == $release_sha and
+		 .head_sha == $request_sha and
+		 .display_title == $expected_title and
 		 .head_repository.full_name == $repository' >/dev/null
+}
+
+request_is_ready() {
+	jobs_json=$(github_get "actions/runs/$run_id/jobs?per_page=100")
+
+	# shellcheck disable=SC2016
+	printf '%s\n' "$jobs_json" | "$jq_bin" --exit-status \
+		--arg preparation_job "$preparation_job_name" \
+		--arg deployment_job "$deployment_job_name" \
+		--arg wait_step "$deployment_wait_step_name" \
+		'([.jobs[] |
+		   select(.name == $preparation_job and
+		          .status == "completed" and
+		          .conclusion == "success")] | length) == 1 and
+		 ([.jobs[] |
+		   select(.name == $deployment_job and .status == "in_progress") |
+		   .steps[]? |
+		   select(.name == $wait_step and .status == "in_progress")] | length) == 1' >/dev/null
 }
 
 site_runs_release() {
@@ -165,28 +190,39 @@ runs_json=$(github_get \
 # shellcheck disable=SC2016
 selected_run=$(printf '%s\n' "$runs_json" | "$jq_bin" --compact-output \
 	--arg repository "$RADIO96_GITHUB_REPOSITORY" \
+	--arg title_prefix "$deployment_title_prefix" \
 	'[.workflow_runs[] |
 	  select(.status == "in_progress" and
 	         .event == "workflow_dispatch" and
 	         .head_branch == "main" and
-	         .head_repository.full_name == $repository)][0] // empty')
+	         .head_repository.full_name == $repository) |
+	  select((.display_title // "") | startswith($title_prefix)) |
+	  select(((.display_title // "") | ltrimstr($title_prefix)) | test("^[0-9a-f]{40}$"))][0] // empty')
 
 if [ -z "$selected_run" ]; then
 	exit 0
 fi
 
 run_id=$(printf '%s\n' "$selected_run" | "$jq_bin" --raw-output '.id')
-release_sha=$(printf '%s\n' "$selected_run" | "$jq_bin" --raw-output '.head_sha')
+request_sha=$(printf '%s\n' "$selected_run" | "$jq_bin" --raw-output '.head_sha')
+# shellcheck disable=SC2016
+release_sha=$(printf '%s\n' "$selected_run" | "$jq_bin" --raw-output \
+	--arg title_prefix "$deployment_title_prefix" '.display_title | ltrimstr($title_prefix)')
 
 case "$run_id" in
 	'' | *[!0-9]*) fail "deployment request contains an invalid workflow run ID" ;;
 esac
+validate_sha "$request_sha"
 validate_sha "$release_sha"
 
 last_request_file="$RADIO96_DEPLOYER_STATE_DIR/last-request"
 current_release_file="$RADIO96_DEPLOYER_STATE_DIR/current-release"
 if ! request_is_active; then
 	echo "Deployment request $run_id is no longer active"
+	exit 0
+fi
+if ! request_is_ready; then
+	echo "Deployment request $run_id is not ready for the VM rollout"
 	exit 0
 fi
 
@@ -217,8 +253,12 @@ if ! "$git_bin" -C "$RADIO96_REPOSITORY_DIR" diff --cached --quiet --ignore-subm
 	fail "deployment repository has staged changes"
 fi
 
-echo "Preparing production release $release_sha from workflow run $run_id"
+echo "Preparing production release $release_sha with tooling $request_sha from workflow run $run_id"
 "$git_bin" -C "$RADIO96_REPOSITORY_DIR" fetch --quiet origin main
+"$git_bin" -C "$RADIO96_REPOSITORY_DIR" cat-file -e "${request_sha}^{commit}"
+if ! "$git_bin" -C "$RADIO96_REPOSITORY_DIR" merge-base --is-ancestor "$request_sha" origin/main; then
+	fail "deployment workflow revision is not an ancestor of origin/main"
+fi
 "$git_bin" -C "$RADIO96_REPOSITORY_DIR" cat-file -e "${release_sha}^{commit}"
 if ! "$git_bin" -C "$RADIO96_REPOSITORY_DIR" merge-base --is-ancestor "$release_sha" origin/main; then
 	fail "requested release is not an ancestor of origin/main"
@@ -229,10 +269,10 @@ if ! request_is_active; then
 	exit 0
 fi
 
-"$git_bin" -C "$RADIO96_REPOSITORY_DIR" switch --detach --force "$release_sha"
+"$git_bin" -C "$RADIO96_REPOSITORY_DIR" switch --detach --force "$request_sha"
 
 render_script="$RADIO96_REPOSITORY_DIR/deploy/production/render-env.sh"
-[ -x "$render_script" ] || fail "target release does not contain the production environment renderer"
+[ -x "$render_script" ] || fail "deployment workflow revision does not contain the environment renderer"
 RADIO96_DEPLOYER_CONFIG="$config_file" "$render_script" "$release_sha"
 
 if ! request_is_active; then
