@@ -56,7 +56,7 @@ github_get() {
 deployment_title_prefix='Deploy production '
 preparation_job_name='Prepare release images'
 deployment_job_name='Deploy production'
-deployment_wait_step_name='Wait for VM to deploy the release'
+deployment_wait_step_name='Wait for the VM to deploy the release'
 
 request_is_active() {
 	request_json=$(github_get "actions/runs/$run_id")
