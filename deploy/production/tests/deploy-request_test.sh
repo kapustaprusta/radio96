@@ -147,7 +147,7 @@ case "$url" in
 			"$preparation_status" "$preparation_conclusion"
 		printf '{"name":"Deploy production","status":"in_progress","conclusion":null,'
 		printf '"steps":[{"name":"Validate deployment target","status":"completed","conclusion":"success"},'
-		printf '{"name":"Wait for VM to deploy the release","status":"in_progress","conclusion":null}]}]}\n'
+		printf '{"name":"Wait for the VM to deploy the release","status":"in_progress","conclusion":null}]}]}\n'
 		;;
 	https://api.github.com/repos/owner/radio96/actions/runs/*)
 		printf '{"id":%s,"status":"in_progress",' "$RADIO96_TEST_RUN_ID"
