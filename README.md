@@ -135,3 +135,68 @@ Production-конфигурация отделена от локального C
 web-gateway и миграций, использует внешний PostgreSQL и запускается командами
 `make production-*`. Обычные `make docker-*` по-прежнему работают только с
 локальным окружением из `deploy/compose.yaml`.
+
+### Deployment pipeline
+
+Обычный CI проверяет код и собираемость production-образов, но не публикует их и
+не изменяет production:
+
+```mermaid
+flowchart LR
+    change["Push или Pull Request"] --> go["Go: lint и tests"]
+    change --> web["Web: lint и tests"]
+    change --> images["Проверочная сборка образов"]
+
+    go --> result["CI завершён"]
+    web --> result
+    images --> result
+
+    result -. "без публикации и деплоя" .-> unchanged["Production не изменяется"]
+```
+
+Production-релиз запускается вручную workflow
+[`Deploy production`](.github/workflows/deploy-production.yml):
+
+```mermaid
+sequenceDiagram
+    autonumber
+
+    actor operator as Пользователь
+    participant actions as GitHub Actions
+    participant cloud as Yandex Cloud
+    participant agent as VM-agent
+    participant app as radio96
+
+    operator->>actions: Run workflow на main
+    Note over actions: Пустой release_sha = текущий main<br/>Указанный SHA = ручной rollback
+
+    actions->>cloud: Проверить API, Web и Migrate образы
+    alt Новый релиз, образов нет
+        actions->>actions: Собрать три образа
+        actions->>cloud: Опубликовать образы
+    else Комплект уже существует
+        cloud-->>actions: Использовать immutable-образы
+    end
+
+    actions->>actions: Prepare release images = success
+    actions->>actions: Deploy production ожидает VM
+
+    loop systemd timer
+        agent->>actions: Проверить активный release
+    end
+
+    actions-->>agent: Release готов к выкладке
+    agent->>cloud: Получить Lockbox secrets и образы
+    agent->>app: Миграции → app → gateway
+
+    actions->>app: GET /versionz и /readyz
+    app-->>actions: Нужный SHA и status ok
+    actions-->>operator: Release success
+
+    Note over agent,app: Rollback меняет образы,<br/>но не отменяет миграции
+```
+
+Каждый релиз использует один неизменяемый полный Git SHA для согласованного
+комплекта `radio96-api`, `radio96-web` и `radio96-migrate`. VM-agent получает
+секреты непосредственно из Lockbox и подтверждает результат через `/versionz`
+и `/readyz`.
