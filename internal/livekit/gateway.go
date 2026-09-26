@@ -16,6 +16,7 @@ import (
 )
 
 type roomService interface {
+	CreateRoom(ctx context.Context, request *livekitproto.CreateRoomRequest) (*livekitproto.Room, error)
 	ListRooms(
 		ctx context.Context,
 		request *livekitproto.ListRoomsRequest,
@@ -80,6 +81,7 @@ func (gateway *Gateway) RoomState(ctx context.Context, roomName string) (*room.M
 			return &room.MediaRoomState{
 				Exists:           true,
 				ParticipantCount: int(mediaRoom.NumParticipants),
+				MaxParticipants:  int(mediaRoom.MaxParticipants),
 			}, nil
 		}
 	}
@@ -88,7 +90,7 @@ func (gateway *Gateway) RoomState(ctx context.Context, roomName string) (*room.M
 }
 
 func (gateway *Gateway) IssueParticipantToken(
-	_ context.Context,
+	ctx context.Context,
 	request room.ParticipantTokenRequest,
 ) (*room.ParticipantToken, error) {
 	if strings.TrimSpace(request.RoomName) == "" {
@@ -113,6 +115,23 @@ func (gateway *Gateway) IssueParticipantToken(
 
 	if uint64(request.MaxParticipants) > uint64(math.MaxUint32) {
 		return nil, errors.New("issue LiveKit participant token: maximum participants must fit uint32")
+	}
+
+	// Token room configuration applies only when the room is first created. Ensure
+	// the actual LiveKit room has the limit before issuing any join credentials.
+	mediaRoom, err := gateway.roomClient.CreateRoom(ctx, &livekitproto.CreateRoomRequest{
+		Name: request.RoomName, MaxParticipants: uint32(request.MaxParticipants),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create LiveKit room: %w", err)
+	}
+
+	if mediaRoom == nil || mediaRoom.Name != request.RoomName || mediaRoom.MaxParticipants != uint32(request.MaxParticipants) {
+		return nil, errors.New("LiveKit room has an unexpected participant limit")
+	}
+
+	if mediaRoom.NumParticipants >= uint32(request.MaxParticipants) {
+		return nil, room.ErrRoomFull
 	}
 
 	grant := &auth.VideoGrant{

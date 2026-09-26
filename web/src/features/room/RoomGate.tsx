@@ -8,11 +8,13 @@ import { RoomSession } from "./RoomSession";
 interface RoomGateProps {
   inviteCode: string;
   navigate: (path: string) => void;
+  createdRoomExpiry?: string | null;
+  onParticipantCountChange?: (count: number | null) => void;
 }
 
 type GateState = { kind: "loading" } | { kind: "ready" } | { kind: "error"; code: string };
 
-export function RoomGate({ inviteCode, navigate }: RoomGateProps) {
+export function RoomGate({ inviteCode, navigate, createdRoomExpiry, onParticipantCountChange }: RoomGateProps) {
   const [state, setState] = useState<GateState>({ kind: "loading" });
   const [requestVersion, setRequestVersion] = useState(0);
 
@@ -43,7 +45,8 @@ export function RoomGate({ inviteCode, navigate }: RoomGateProps) {
   }, [inviteCode, requestVersion]);
 
   if (state.kind === "loading") return <ConnectionProgress checkingRoom />;
-  if (state.kind === "ready") return <RoomSession inviteCode={inviteCode} navigate={navigate} />;
+  if (state.kind === "ready") return <RoomSession inviteCode={inviteCode} navigate={navigate}
+    createdRoomExpiry={createdRoomExpiry} onParticipantCountChange={onParticipantCountChange} />;
 
   return (
     <RoomError
