@@ -11,9 +11,9 @@ interface MicrophoneAccessProps {
 export function MicrophoneAccess({ error, pending = false, onRetry, onListen, onCancel }: MicrophoneAccessProps) {
   const missing = error === "microphone_not_found";
   const blocked = error === "microphone_denied";
-  const title = pending ? "Разреши доступ к микрофону" : missing ? "Микрофон не найден"
+  const title = pending ? "Подключаем микрофон" : missing ? "Микрофон не найден"
     : blocked ? "Доступ к микрофону заблокирован" : "Не удалось включить микрофон";
-  const text = pending ? "Браузер покажет системный запрос. После разрешения микрофон включится автоматически."
+  const text = pending ? "Если браузер запросил доступ, разреши его. Или войди без микрофона."
     : missing ? "Подключи микрофон или выбери другое устройство. В комнату всё равно можно войти без микрофона."
       : blocked ? "Разреши микрофон в настройках браузера, затем обнови проверку."
         : "Проверь устройство и попробуй снова. В комнату можно войти без микрофона.";
@@ -29,7 +29,7 @@ export function MicrophoneAccess({ error, pending = false, onRetry, onListen, on
         </div>
         <div className="microphone-notice__actions">
           <button className="button button--primary" type="button" onClick={onRetry} disabled={pending} aria-busy={pending}>
-            {pending ? "Ожидаем разрешение…" : missing ? "Проверить устройства" : "Проверить снова"}
+            {pending ? "Подключаем микрофон…" : missing ? "Проверить устройства" : "Проверить снова"}
           </button>
           <button className="button button--secondary" type="button" onClick={onListen}>Войти без микрофона</button>
           {onCancel && <button className="button button--secondary" type="button" onClick={onCancel}>Отменить</button>}
