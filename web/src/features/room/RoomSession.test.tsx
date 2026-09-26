@@ -47,7 +47,10 @@ async function join(withMicrophone = true) {
   const user = userEvent.setup();
   const input = await screen.findByRole("textbox", { name: "Никнейм" });
   await user.type(input, "  Влад  ");
-  if (!withMicrophone) await user.click(screen.getByRole("switch", { name: "Выключить микрофон" }));
+  if (!withMicrophone) {
+    await user.click(screen.getByRole("switch", { name: "Не включать микрофон при входе" }));
+    expect(screen.getByText("Можно войти без доступа к микрофону")).toBeInTheDocument();
+  }
   await user.click(screen.getByRole("button", { name: withMicrophone ? "Войти в разговор" : "Войти без микрофона" }));
   return user;
 }
@@ -56,6 +59,7 @@ describe("join and call", () => {
   it.each([true, false])("joins with microphone=%s and sends only the validated name", async (withMicrophone) => {
     const fetchMock = mockAPI();
     render(<App />);
+    expect(await screen.findByText("Браузер запросит доступ при входе")).toBeInTheDocument();
     await join(withMicrophone);
 
     expect(await screen.findByRole("heading", { name: "Голосовая комната" })).toBeInTheDocument();
@@ -69,9 +73,24 @@ describe("join and call", () => {
     }));
     expect(screen.getByRole("switch")).toHaveAttribute("aria-checked", String(withMicrophone));
     expect(screen.getByText("1 участник")).toBeInTheDocument();
+    expect(screen.getByText("Голосовая комната · 1 участник")).toBeInTheDocument();
     expect(document.title).not.toContain(inviteCode);
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
+  });
+
+  it("toggles the microphone with M outside editable fields and settings", async () => {
+    mockAPI();
+    render(<App />);
+    const user = await join(false);
+    const microphone = await screen.findByRole("switch", { name: "Включить микрофон" });
+    expect(microphone).toHaveAttribute("aria-keyshortcuts", "M");
+    await user.keyboard("m");
+    expect(sessions[0].setMicrophoneEnabled).toHaveBeenCalledWith(true, "default");
+    await user.click(screen.getByRole("button", { name: "Настроить звук" }));
+    sessions[0].setMicrophoneEnabled.mockClear();
+    await user.keyboard("m");
+    expect(sessions[0].setMicrophoneEnabled).not.toHaveBeenCalled();
   });
 
   it.each(["rejects", "stalls"] as const)(
@@ -260,7 +279,7 @@ describe("join and call", () => {
     const user = await join(false);
     await screen.findByRole("heading", { name: "Голосовая комната" });
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValueOnce(new DOMException("", "NotAllowedError"));
-    const copy = screen.getByRole("button", { name: "Копировать ссылку" });
+    const copy = screen.getByLabelText("Скопировать ссылку");
     const participant = screen.getByRole("article");
     await user.click(copy);
     const dialog = await screen.findByRole("dialog", { name: "Буфер обмена недоступен" });
