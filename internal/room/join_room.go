@@ -75,10 +75,8 @@ func (useCase *JoinRoom) Execute(
 		return nil, joinErr
 	}
 
-	if foundRoom.Status() == StatusActive {
-		if err := useCase.validateActiveRoom(ctx, foundRoom, now); err != nil {
-			return nil, err
-		}
+	if err := useCase.validateMediaRoom(ctx, foundRoom, now); err != nil {
+		return nil, err
 	}
 
 	participantIdentity, err := useCase.participantIdentityGenerator.Generate()
@@ -94,6 +92,10 @@ func (useCase *JoinRoom) Execute(
 		MaxParticipants:     MaxParticipants,
 	})
 	if err != nil {
+		if errors.Is(err, ErrRoomFull) {
+			return nil, ErrRoomFull
+		}
+
 		return nil, fmt.Errorf("%w: issue participant token: %w", ErrMediaUnavailable, err)
 	}
 
@@ -108,7 +110,7 @@ func (useCase *JoinRoom) Execute(
 	}, nil
 }
 
-func (useCase *JoinRoom) validateActiveRoom(ctx context.Context, foundRoom *Room, now time.Time) error {
+func (useCase *JoinRoom) validateMediaRoom(ctx context.Context, foundRoom *Room, now time.Time) error {
 	state, err := useCase.mediaGateway.RoomState(ctx, foundRoom.Name())
 	if err != nil {
 		return fmt.Errorf("%w: inspect media room: %w", ErrMediaUnavailable, err)
@@ -119,6 +121,10 @@ func (useCase *JoinRoom) validateActiveRoom(ctx context.Context, foundRoom *Room
 	}
 
 	if !state.Exists {
+		if foundRoom.Status() == StatusOpen {
+			return nil
+		}
+
 		if err := foundRoom.Finish(now); err != nil {
 			return fmt.Errorf("finish missing media room: %w", err)
 		}
@@ -128,6 +134,10 @@ func (useCase *JoinRoom) validateActiveRoom(ctx context.Context, foundRoom *Room
 		}
 
 		return ErrRoomFinished
+	}
+
+	if state.MaxParticipants != MaxParticipants {
+		return fmt.Errorf("%w: media room has an unexpected participant limit", ErrMediaUnavailable)
 	}
 
 	if state.ParticipantCount >= MaxParticipants {

@@ -6,7 +6,7 @@ export function RoomLeft({ onRejoin, onHome }: { onRejoin: () => void; onHome: (
       <div className="state-stack">
         <span className="state-icon" aria-hidden="true"><LogOutIcon /></span>
         <h1>Ты вышел из разговора</h1>
-        <p>Можешь подключиться снова, пока в комнате остаются другие участники.</p>
+        <p>Можешь подключиться снова, пока комната активна.</p>
         <div className="state-actions">
           <button className="button button--primary" type="button" onClick={onRejoin}>Подключиться снова</button>
           <button className="button button--secondary" type="button" onClick={onHome}>На главную</button>

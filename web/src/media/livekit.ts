@@ -406,6 +406,9 @@ function microphoneError(error: unknown): MediaError {
 
 function connectionError(error: unknown): MediaError {
   if (error instanceof MediaError) return error;
+  if (error instanceof ConnectionError && /room.{0,20}full|max(?:imum)?.{0,30}participant/i.test(error.message)) {
+    return new MediaError("room_full");
+  }
   if (error instanceof ConnectionError && error.reason === ConnectionErrorReason.LeaveRequest && isFinished(error.context)) {
     return new MediaError("room_finished");
   }

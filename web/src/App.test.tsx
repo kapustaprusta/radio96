@@ -30,6 +30,7 @@ describe("home", () => {
 
     expect(await screen.findByRole("heading", { name: "Вход в комнату" })).toBeInTheDocument();
     expect(window.location.pathname).toBe(`/rooms/${inviteCode}`);
+    expect(screen.getByText(/Комната создана/)).toBeInTheDocument();
     expect(document.title).toBe("Голосовая комната — radio96");
     expect(document.title).not.toContain(inviteCode);
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -212,7 +213,7 @@ describe("pre-join", () => {
 
     expect(input).not.toHaveAttribute("aria-invalid", "true");
     expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("switch", { name: "Выключить микрофон" }));
+    await user.click(screen.getByRole("switch", { name: "Не включать микрофон при входе" }));
     await user.click(screen.getByRole("button", { name: "Настроить звук" }));
     await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
 
@@ -238,7 +239,9 @@ describe("pre-join", () => {
       await user.click(input);
       await user.keyboard("{Enter}");
     } else {
-      if (action === "listener") await user.click(screen.getByRole("switch", { name: "Выключить микрофон" }));
+      if (action === "listener") {
+        await user.click(screen.getByRole("switch", { name: "Не включать микрофон при входе" }));
+      }
       await user.click(screen.getByRole("button", {
         name: action === "listener" ? "Войти без микрофона" : "Войти в разговор",
       }));
@@ -277,7 +280,8 @@ describe("pre-join", () => {
     expect(input).toHaveAttribute("aria-invalid", "true");
 
     if (focus === "keyboard") {
-      await user.tab({ shift: true });
+      expect(input).toHaveFocus();
+      await user.tab();
       await user.tab({ shift: true });
     } else await user.click(input);
 
@@ -321,6 +325,18 @@ describe("pre-join", () => {
     expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
   });
 
+  it("shows a Unicode-aware nickname count only near the limit", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState(null, "", `/rooms/${inviteCode}`);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ status: "open", expiresAt: "2026-09-04T10:00:00Z" }, 200)));
+    render(<App />);
+    const input = await screen.findByRole("textbox", { name: "Никнейм" });
+    await user.type(input, "🎮".repeat(27));
+    expect(screen.queryByText("27/32")).not.toBeInTheDocument();
+    await user.type(input, "🎮");
+    expect(screen.getByText("28/32")).toBeInTheDocument();
+  });
+
   it("toggles the microphone and opens audio settings", async () => {
     const user = userEvent.setup();
     window.history.replaceState(null, "", `/rooms/${inviteCode}`);
@@ -330,11 +346,12 @@ describe("pre-join", () => {
     );
 
     render(<App />);
-    const microphoneSwitch = await screen.findByRole("switch", { name: "Выключить микрофон" });
+    const microphoneSwitch = await screen.findByRole("switch", { name: "Не включать микрофон при входе" });
     await user.click(microphoneSwitch);
 
     expect(screen.getByText("Микрофон выключен")).toBeInTheDocument();
-    expect(screen.getByRole("switch", { name: "Включить микрофон" })).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByRole("switch", { name: "Включить микрофон при входе" }))
+      .toHaveAttribute("aria-checked", "false");
 
     await user.click(screen.getByRole("button", { name: "Настроить звук" }));
     expect(screen.getByRole("dialog", { name: "Настройки звука" })).toBeInTheDocument();

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { IconButton } from "../../components/IconButton";
@@ -23,6 +23,7 @@ interface PreJoinProps {
   initialPreferences?: JoinPreferences;
   microphoneError?: string;
   nameRejected?: boolean;
+  createdRoomExpiry?: string | null;
 }
 
 export function PreJoin({
@@ -30,6 +31,7 @@ export function PreJoin({
   initialPreferences = defaultJoinPreferences,
   microphoneError,
   nameRejected = false,
+  createdRoomExpiry,
 }: PreJoinProps) {
   const [displayName, setDisplayName] = useState(initialPreferences.displayName);
   const [nameError, setNameError] = useState<DisplayNameError | null>(null);
@@ -39,14 +41,33 @@ export function PreJoin({
   const [selectedInput, setSelectedInput] = useState<AudioInputChoice>(initialPreferences.input);
   const [selectedOutputId, setSelectedOutputId] = useState(initialPreferences.outputId);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [microphonePermission, setMicrophonePermission] = useState<PermissionState | "unknown">("unknown");
   const { copyState, copy, dismiss } = useInviteLink();
   const settingsButton = useRef<HTMLButtonElement>(null);
+  const nameInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let permission: PermissionStatus | undefined;
+    let active = true;
+    const update = () => { if (active && permission) setMicrophonePermission(permission.state); };
+    void navigator.permissions?.query({ name: "microphone" as PermissionName }).then((result) => {
+      if (!active) return;
+      permission = result;
+      update();
+      permission.addEventListener("change", update);
+    }).catch(() => undefined);
+    return () => {
+      active = false;
+      permission?.removeEventListener("change", update);
+    };
+  }, []);
 
   const checkName = (showEmptyError = true): boolean => {
     const result = validateDisplayName(displayName);
     setNameWasChecked(true);
 
     if (!result.valid) {
+      if (showEmptyError) nameInput.current?.focus();
       setNameError(result.error === "empty" && !showEmptyError ? null : result.error);
       return false;
     }
@@ -89,12 +110,21 @@ export function PreJoin({
     <section className="screen centered-screen">
       <div className="prejoin-card">
         <h1>Вход в комнату</h1>
+        {createdRoomExpiry && (
+          <p className="created-room-notice" role="status">
+            Комната создана. Если никто не войдёт, она станет неактивной в{" "}
+            <time dateTime={createdRoomExpiry}>{new Date(createdRoomExpiry).toLocaleTimeString("ru", {
+              hour: "2-digit", minute: "2-digit",
+            })}</time>.
+          </p>
+        )}
 
         <form noValidate onSubmit={handleSubmit}>
           <label className="field-label" htmlFor="display-name">
             Никнейм
           </label>
           <input
+            ref={nameInput}
             className="text-input"
             id="display-name"
             name="displayName"
@@ -123,21 +153,31 @@ export function PreJoin({
               {nameError ? `${errorMessages[nameError]}.` : "Проверь никнейм: от 1 до 32 символов."}
             </p>
           )}
+          {Array.from(displayName).length >= 28 && (
+            <span className="name-count" aria-live="polite">{Array.from(displayName).length}/32</span>
+          )}
 
           <div className="audio-row">
             <span className="audio-row__icon" aria-hidden="true">
               {microphoneEnabled ? <MicIcon /> : <MicOffIcon />}
             </span>
             <span className="audio-row__copy">
-              <strong>Микрофон {microphoneEnabled ? "включён" : "выключен"}</strong>
-              <span>{selectedInput.label}</span>
+              <strong>Микрофон {microphoneEnabled ? "будет включён" : "выключен"}</strong>
+              <span>{!microphoneEnabled
+                ? "Можно войти без доступа к микрофону"
+                : microphonePermission === "granted"
+                  ? selectedInput.label
+                  : microphonePermission === "denied"
+                    ? "Нет доступа к микрофону"
+                    : "Браузер запросит доступ при входе"}</span>
             </span>
             <button
               className="mic-switch"
               type="button"
               role="switch"
               aria-checked={microphoneEnabled}
-              aria-label={microphoneEnabled ? "Выключить микрофон" : "Включить микрофон"}
+              aria-label={microphoneEnabled
+                ? "Не включать микрофон при входе" : "Включить микрофон при входе"}
               onClick={() => setMicrophoneEnabled((value) => !value)}
             >
               <span aria-hidden="true" />
