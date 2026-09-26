@@ -8,10 +8,16 @@ import { parseRoute } from "./routing";
 
 export function App() {
   const [pathname, setPathname] = useState(() => window.location.pathname);
+  const [createdRoomExpiry, setCreatedRoomExpiry] = useState<string | null>(null);
+  const [callParticipantCount, setCallParticipantCount] = useState<number | null>(null);
   const route = parseRoute(pathname);
 
   useEffect(() => {
-    const handlePopState = () => setPathname(window.location.pathname);
+    const handlePopState = () => {
+      setCreatedRoomExpiry(null);
+      setCallParticipantCount(null);
+      setPathname(window.location.pathname);
+    };
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
@@ -20,8 +26,10 @@ export function App() {
     document.title = titleForRoute(route.kind);
   }, [route.kind]);
 
-  const navigate = useCallback((path: string) => {
+  const navigate = useCallback((path: string, expiresAt?: string) => {
     window.history.pushState(null, "", path);
+    setCreatedRoomExpiry(expiresAt ?? null);
+    setCallParticipantCount(null);
     setPathname(window.location.pathname);
     window.scrollTo({ top: 0, behavior: "instant" });
   }, []);
@@ -30,11 +38,17 @@ export function App() {
     <div className="app-frame">
       <header className="app-header">
         <Brand navigate={navigate} />
+        {route.kind === "room" && callParticipantCount !== null && (
+          <span className="app-header__room-context">Голосовая комната · {callParticipantCount} {
+            callParticipantCount === 1 ? "участник" : callParticipantCount < 5 ? "участника" : "участников"
+          }</span>
+        )}
       </header>
       <main className="app-main">
         {route.kind === "home" && <HomePage navigate={navigate} />}
         {route.kind === "room" && (
-          <RoomGate key={route.inviteCode} inviteCode={route.inviteCode} navigate={navigate} />
+          <RoomGate key={route.inviteCode} inviteCode={route.inviteCode} navigate={navigate}
+            createdRoomExpiry={createdRoomExpiry} onParticipantCountChange={setCallParticipantCount} />
         )}
         {route.kind === "not-found" && <NotFound navigate={navigate} />}
       </main>

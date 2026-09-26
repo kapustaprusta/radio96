@@ -145,10 +145,10 @@ func TestGatewayRoomState(t *testing.T) {
 			roomName: "room-id",
 			response: &livekitproto.ListRoomsResponse{
 				Rooms: []*livekitproto.Room{
-					{Name: "room-id", NumParticipants: 3},
+					{Name: "room-id", NumParticipants: 3, MaxParticipants: room.MaxParticipants},
 				},
 			},
-			want:      room.MediaRoomState{Exists: true, ParticipantCount: 3},
+			want:      room.MediaRoomState{Exists: true, ParticipantCount: 3, MaxParticipants: room.MaxParticipants},
 			wantCalls: 1,
 		},
 		{
@@ -353,10 +353,14 @@ func TestGatewayIssueParticipantToken(t *testing.T) {
 		TTL:                 10 * time.Minute,
 		MaxParticipants:     room.MaxParticipants,
 	}
+	client := &fakeRoomService{created: &livekitproto.Room{
+		Name: request.RoomName, MaxParticipants: room.MaxParticipants, NumParticipants: room.MaxParticipants - 1,
+	}}
 	gateway := &Gateway{
-		serverURL: serverURL,
-		apiKey:    apiKey,
-		apiSecret: apiSecret,
+		serverURL:  serverURL,
+		apiKey:     apiKey,
+		apiSecret:  apiSecret,
+		roomClient: client,
 	}
 
 	got, err := gateway.IssueParticipantToken(context.Background(), request)
@@ -450,12 +454,58 @@ func TestGatewayIssueParticipantToken(t *testing.T) {
 	if grants.RoomConfig == nil || grants.RoomConfig.MaxParticipants != room.MaxParticipants {
 		t.Errorf("room max participants = %v, want %d", grants.RoomConfig, request.MaxParticipants)
 	}
+
+	if len(client.createRequests) != 1 || client.createRequests[0].MaxParticipants != room.MaxParticipants {
+		t.Errorf("CreateRoom requests = %v, want one request with max participants %d", client.createRequests, room.MaxParticipants)
+	}
+}
+
+func TestGatewayIssueParticipantTokenCapacity(t *testing.T) {
+	tests := []struct {
+		name    string
+		created *livekitproto.Room
+		wantErr error
+	}{
+		{name: "room at capacity", created: &livekitproto.Room{
+			Name: "room-id", MaxParticipants: room.MaxParticipants, NumParticipants: room.MaxParticipants,
+		}, wantErr: room.ErrRoomFull},
+		{name: "room without server limit", created: &livekitproto.Room{Name: "room-id"}},
+		{name: "wrong media room", created: &livekitproto.Room{Name: "other-room", MaxParticipants: room.MaxParticipants}},
+		{name: "missing media room"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gateway := &Gateway{serverURL: "wss://radio96.example.livekit.cloud", apiKey: "api-key", apiSecret: "api-secret",
+				roomClient: &fakeRoomService{created: test.created}}
+			got, err := gateway.IssueParticipantToken(t.Context(), room.ParticipantTokenRequest{
+				RoomName: "room-id", ParticipantIdentity: "participant-id", DisplayName: "Alice",
+				TTL: time.Minute, MaxParticipants: room.MaxParticipants,
+			})
+			if got != nil || err == nil {
+				t.Fatalf("IssueParticipantToken() = (%v, %v), want nil token and error", got, err)
+			}
+
+			if test.wantErr != nil && !errors.Is(err, test.wantErr) {
+				t.Errorf("IssueParticipantToken() error = %v, want %v", err, test.wantErr)
+			}
+		})
+	}
 }
 
 type fakeRoomService struct {
-	response *livekitproto.ListRoomsResponse
-	err      error
-	requests []*livekitproto.ListRoomsRequest
+	response       *livekitproto.ListRoomsResponse
+	created        *livekitproto.Room
+	err            error
+	requests       []*livekitproto.ListRoomsRequest
+	createRequests []*livekitproto.CreateRoomRequest
+}
+
+func (service *fakeRoomService) CreateRoom(
+	_ context.Context,
+	request *livekitproto.CreateRoomRequest,
+) (*livekitproto.Room, error) {
+	service.createRequests = append(service.createRequests, request)
+	return service.created, service.err
 }
 
 func (service *fakeRoomService) ListRooms(

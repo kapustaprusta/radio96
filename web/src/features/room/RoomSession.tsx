@@ -13,6 +13,8 @@ import { PreJoin } from "./PreJoin";
 import { RoomError } from "./RoomError";
 import { RoomLeft } from "./RoomLeft";
 
+const microphoneNoticeDelayMs = 300;
+
 type View =
   | { kind: "prejoin"; microphoneError?: string; nameRejected?: boolean }
   | { kind: "progress"; step: 1 | 2 | 3 }
@@ -25,21 +27,34 @@ interface Attempt {
   session: MediaSession;
   unsubscribe?: () => void;
   timer?: number;
+  microphoneNoticeTimer?: number;
   startedAt?: number;
   restoredAt?: number;
   reconnecting?: boolean;
 }
 
-export function RoomSession({ inviteCode, navigate }: { inviteCode: string; navigate: (path: string) => void }) {
+export function RoomSession({ inviteCode, navigate, createdRoomExpiry, onParticipantCountChange }: {
+  inviteCode: string;
+  navigate: (path: string) => void;
+  createdRoomExpiry?: string | null;
+  onParticipantCountChange?: (count: number | null) => void;
+}) {
   const [view, setView] = useState<View>({ kind: "prejoin" });
   const [preferences, setPreferences] = useState(defaultJoinPreferences);
   const attempt = useRef<Attempt | null>(null);
+
+  useEffect(() => {
+    onParticipantCountChange?.(view.kind === "call" ? view.snapshot.participants.length : null);
+  }, [onParticipantCountChange, view]);
+
+  useEffect(() => () => onParticipantCountChange?.(null), [onParticipantCountChange]);
 
   const dispose = useCallback(() => {
     const current = attempt.current;
     attempt.current = null;
     if (!current) return;
     window.clearTimeout(current.timer);
+    window.clearTimeout(current.microphoneNoticeTimer);
     current.controller.abort();
     current.unsubscribe?.();
     void current.session.disconnect().catch(() => undefined);
@@ -86,9 +101,16 @@ export function RoomSession({ inviteCode, navigate }: { inviteCode: string; navi
       }
 
       window.clearTimeout(current.timer);
-      setView({ kind: "progress", step: 2 });
       if (nextPreferences.microphoneEnabled) {
-        await current.session.prepareMicrophone(nextPreferences.input.deviceId);
+        current.microphoneNoticeTimer = window.setTimeout(() => {
+          if (active()) setView({ kind: "progress", step: 2 });
+        }, microphoneNoticeDelayMs);
+        try {
+          await current.session.prepareMicrophone(nextPreferences.input.deviceId);
+        } finally {
+          window.clearTimeout(current.microphoneNoticeTimer);
+          current.microphoneNoticeTimer = undefined;
+        }
       }
       if (!active()) return;
 
@@ -136,7 +158,7 @@ export function RoomSession({ inviteCode, navigate }: { inviteCode: string; navi
   };
 
   if (view.kind === "prejoin") {
-    return <PreJoin initialPreferences={preferences} onJoin={begin} {...view} />;
+    return <PreJoin initialPreferences={preferences} onJoin={begin} createdRoomExpiry={createdRoomExpiry} {...view} />;
   }
 
   if (view.kind === "progress") {

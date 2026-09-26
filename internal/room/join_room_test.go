@@ -48,6 +48,7 @@ func TestJoinRoomExecute(t *testing.T) {
 			identity:          "participant-id",
 			wantStatus:        StatusOpen,
 			wantFindCalls:     1,
+			wantStateCalls:    1,
 			wantIdentityCalls: 1,
 			wantTokenCalls:    1,
 			wantTokenRequest:  true,
@@ -61,6 +62,7 @@ func TestJoinRoomExecute(t *testing.T) {
 			state: &MediaRoomState{
 				Exists:           true,
 				ParticipantCount: MaxParticipants - 1,
+				MaxParticipants:  MaxParticipants,
 			},
 			identity:          "participant-id",
 			wantStatus:        StatusActive,
@@ -190,11 +192,33 @@ func TestJoinRoomExecute(t *testing.T) {
 			state: &MediaRoomState{
 				Exists:           true,
 				ParticipantCount: MaxParticipants,
+				MaxParticipants:  MaxParticipants,
 			},
 			wantErr:        ErrRoomFull,
 			wantStatus:     StatusActive,
 			wantFindCalls:  1,
 			wantStateCalls: 1,
+		},
+		{
+			name:       "rejects ninth join while database room is still open",
+			inviteCode: validInviteCode, displayName: "Alice", prepareRoom: newTestRoom,
+			now:     testCreatedAt.Add(2 * time.Minute),
+			state:   &MediaRoomState{Exists: true, ParticipantCount: MaxParticipants, MaxParticipants: MaxParticipants},
+			wantErr: ErrRoomFull, wantStatus: StatusOpen, wantFindCalls: 1, wantStateCalls: 1,
+		},
+		{
+			name:       "rejects media room without server capacity guard",
+			inviteCode: validInviteCode, displayName: "Alice", prepareRoom: newTestRoom,
+			now:     testCreatedAt.Add(2 * time.Minute),
+			state:   &MediaRoomState{Exists: true, ParticipantCount: 2},
+			wantErr: ErrMediaUnavailable, wantStatus: StatusOpen, wantFindCalls: 1, wantStateCalls: 1,
+		},
+		{
+			name:       "maps final media capacity rejection to room full",
+			inviteCode: validInviteCode, displayName: "Alice", prepareRoom: newTestRoom,
+			now: testCreatedAt.Add(2 * time.Minute), identity: "participant-id", tokenErr: ErrRoomFull,
+			wantErr: ErrRoomFull, wantStatus: StatusOpen, wantFindCalls: 1, wantStateCalls: 1,
+			wantIdentityCalls: 1, wantTokenCalls: 1,
 		},
 		{
 			name:              "participant identity generator fails",
@@ -206,6 +230,7 @@ func TestJoinRoomExecute(t *testing.T) {
 			wantErr:           generatorErr,
 			wantStatus:        StatusOpen,
 			wantFindCalls:     1,
+			wantStateCalls:    1,
 			wantIdentityCalls: 1,
 		},
 		{
@@ -219,6 +244,7 @@ func TestJoinRoomExecute(t *testing.T) {
 			wantErr:           ErrMediaUnavailable,
 			wantStatus:        StatusOpen,
 			wantFindCalls:     1,
+			wantStateCalls:    1,
 			wantIdentityCalls: 1,
 			wantTokenCalls:    1,
 		},
@@ -233,6 +259,7 @@ func TestJoinRoomExecute(t *testing.T) {
 			wantErr:           ErrMediaUnavailable,
 			wantStatus:        StatusOpen,
 			wantFindCalls:     1,
+			wantStateCalls:    1,
 			wantIdentityCalls: 1,
 			wantTokenCalls:    1,
 		},
@@ -290,7 +317,7 @@ func prepareJoinTestRoom(t *testing.T, prepare func(*testing.T) *Room) *Room {
 func newJoinTestMediaGateway(test joinRoomTestCase) *fakeMediaGateway {
 	state := test.state
 	if state == nil && !test.returnNilState {
-		state = &MediaRoomState{Exists: true}
+		state = &MediaRoomState{Exists: true, MaxParticipants: MaxParticipants}
 	}
 
 	token := test.token

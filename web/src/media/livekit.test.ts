@@ -460,6 +460,8 @@ describe("LiveKit voice session", () => {
 
   it.each([
     { error: ConnectionError.leaveRequest("private details", DisconnectReason.ROOM_DELETED), expected: "room_finished" },
+    { error: ConnectionError.notAllowed("room is full", 403), expected: "room_full" },
+    { error: ConnectionError.notAllowed("maximum participant limit reached", 403), expected: "room_full" },
     { error: ConnectionError.internal("private details", { status: 503 }), expected: "connection_failed" },
     { error: ConnectionError.notAllowed("private details", 403), expected: "connection_failed" },
   ])("sanitizes failed connections as $expected without guessing capacity", async ({ error, expected }) => {

@@ -109,6 +109,33 @@ func TestBoundedMediaGateway(t *testing.T) {
 	}
 }
 
+func TestConfiguredMediaGatewayCreatesBoundedRoom(t *testing.T) {
+	mediaServer := newTestLiveKitServer(t)
+	t.Cleanup(mediaServer.Close)
+
+	gateway, err := configuredMediaGateway(&config.Config{
+		MediaRequestTimeout: time.Second,
+		LiveKitURL:          "ws" + strings.TrimPrefix(mediaServer.URL, "http"),
+		LiveKitAPIKey:       "test-key", LiveKitAPISecret: strings.Repeat("x", 32),
+	})
+	if err != nil {
+		t.Fatalf("configuredMediaGateway() error = %v", err)
+	}
+
+	state, err := gateway.RoomState(t.Context(), "room-id")
+	if err != nil || state == nil || state.Exists {
+		t.Fatalf("RoomState() = (%v, %v), want absent room", state, err)
+	}
+
+	token, err := gateway.IssueParticipantToken(t.Context(), room.ParticipantTokenRequest{
+		RoomName: "room-id", ParticipantIdentity: "participant-id", DisplayName: "Alice",
+		TTL: time.Minute, MaxParticipants: room.MaxParticipants,
+	})
+	if err != nil || token == nil || token.Value == "" {
+		t.Fatalf("IssueParticipantToken() = (%v, %v), want token", token, err)
+	}
+}
+
 type waitingMediaGateway struct{}
 
 func (waitingMediaGateway) RoomState(ctx context.Context, _ string) (*room.MediaRoomState, error) {

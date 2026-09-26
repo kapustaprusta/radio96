@@ -64,10 +64,54 @@ describe("mockup screen structure", () => {
     const controls = container.querySelector(".call-controls")! as HTMLElement;
     for (const button of Array.from(controls.children)) expect(button).toHaveClass("button--icon");
     expect(controls.children).toHaveLength(4);
+    expect(screen.getByRole("button", { name: "Скопировать ссылку" })).toHaveClass("button--icon");
+    expect(screen.getByRole("button", { name: "Скопировать ссылку" }).querySelector("span")).toBeNull();
     expect(screen.getByRole("button", { name: "Выйти из разговора" })).not.toHaveClass("button--danger");
     expect(participantColor("local", true)).toBe("light-dark(#a6aca4, #737a74)");
     if (count > 1) expect(screen.getByRole("article", { name: "Игрок 1, Микрофон выключен" }))
       .toHaveAttribute("data-speaking", "false");
+  });
+
+  it("never renders more than eight participant tiles", () => {
+    const session = new FakeMediaSession();
+    session.snapshot = { connection: "connected", audioPlaybackBlocked: false, disconnectReason: null,
+      participants: Array.from({ length: 9 }, (_, index) => ({
+        identity: String(index), name: `Игрок ${index}`, isLocal: index === 0,
+        microphoneEnabled: false, speaking: false,
+      })) };
+    const { container } = render(<CallView snapshot={session.snapshot} session={session} preferences={defaultJoinPreferences}
+      onPreferencesChange={vi.fn()} onLeave={vi.fn()} />);
+    expect(screen.getAllByRole("article")).toHaveLength(8);
+    expect(container.querySelector(".participant-grid")).toHaveAttribute("data-count", "8");
+  });
+
+  it("offers native sharing on compact devices", async () => {
+    const share = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    vi.stubGlobal("navigator", { ...navigator, share });
+    const session = new FakeMediaSession();
+    render(<CallView snapshot={session.snapshot} session={session} preferences={defaultJoinPreferences}
+      onPreferencesChange={vi.fn()} onLeave={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Поделиться" })).toHaveClass("button--icon");
+    expect(screen.getByRole("button", { name: "Поделиться" }).querySelector("span")).toBeNull();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Поделиться" }));
+    expect(share).toHaveBeenCalledWith({ title: "Голосовая комната — radio96", url: window.location.href });
+  });
+
+  it("falls back to the clipboard when native sharing fails", async () => {
+    const share = vi.fn().mockRejectedValue(new Error("share unavailable"));
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+    vi.stubGlobal("navigator", { ...navigator, share, clipboard: { writeText } });
+    const session = new FakeMediaSession();
+    render(<CallView snapshot={session.snapshot} session={session} preferences={defaultJoinPreferences}
+      onPreferencesChange={vi.fn()} onLeave={vi.fn()} />);
+    const user = userEvent.setup();
+    const clipboardWrite = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    await user.click(screen.getByRole("button", { name: "Поделиться" }));
+    expect(share).toHaveBeenCalledOnce();
+    expect(clipboardWrite).toHaveBeenCalledWith(window.location.href);
+    expect(await screen.findByText("Ссылка скопирована")).toBeInTheDocument();
   });
 });
 

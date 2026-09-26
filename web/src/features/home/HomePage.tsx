@@ -5,7 +5,7 @@ import { AlertIcon } from "../../components/Icons";
 import { sameOriginRoomPath } from "../../routing";
 
 interface HomePageProps {
-  navigate: (path: string) => void;
+  navigate: (path: string, expiresAt?: string) => void;
 }
 
 type CreateState = "idle" | "creating" | "error";
@@ -39,7 +39,7 @@ export function HomePage({ navigate }: HomePageProps) {
         return;
       }
 
-      navigate(roomPath);
+      navigate(roomPath, room.expiresAt);
     } catch {
       if (!controller.signal.aborted) {
         setState("error");

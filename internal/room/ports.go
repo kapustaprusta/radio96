@@ -29,6 +29,7 @@ type RoomRepository interface {
 type MediaRoomState struct {
 	Exists           bool
 	ParticipantCount int
+	MaxParticipants  int
 }
 
 type ParticipantTokenRequest struct {
