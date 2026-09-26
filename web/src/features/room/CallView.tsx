@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 
 import { IconButton } from "../../components/IconButton";
-import { LinkIcon, LogOutIcon, MicIcon, MicOffIcon, SettingsIcon, VolumeIcon } from "../../components/Icons";
+import { LinkIcon, LogOutIcon, MicIcon, MicOffIcon, SettingsIcon, ShareIcon, VolumeIcon } from "../../components/Icons";
 import { MediaError } from "../../media/session";
 import type { CallSnapshot, MediaErrorCode, MediaSession } from "../../media/session";
 import { AudioSettingsDialog } from "./AudioSettingsDialog";
@@ -32,7 +32,7 @@ export function CallView({
   const changingMicrophone = useRef(false);
   const publishPreparedMicrophone = useRef(preferences.microphoneEnabled);
   const active = useRef(true);
-  const { copyState, copy, dismiss } = useInviteLink();
+  const { copyState, share, nativeShare, dismiss } = useInviteLink();
   const microphoneEnabled = snapshot.participants.find((participant) => participant.isLocal)?.microphoneEnabled ?? false;
 
   useEffect(() => {
@@ -76,6 +76,18 @@ export function CallView({
   const banner = snapshot.connection === "reconnecting" ? "Связь прервалась. Переподключаемся…"
     : restoredAt !== undefined && now - restoredAt < 3000 ? "Связь восстановлена" : "";
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "m" || event.repeat || event.altKey || event.ctrlKey || event.metaKey ||
+        settingsOpen || document.querySelector('[role="dialog"]') || event.target instanceof HTMLElement &&
+        (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName))) return;
+      event.preventDefault();
+      void setMicrophoneEnabled(!microphoneEnabled);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [microphoneEnabled, setMicrophoneEnabled, settingsOpen]);
+
   return (
     <section className="screen call-screen" aria-label="Разговор">
       <header className="sr-only">
@@ -93,8 +105,8 @@ export function CallView({
         </div>
       )}
       <div className="participant-scroll">
-        <div className="participant-grid" data-count={snapshot.participants.length}>
-          {snapshot.participants.map((participant) => {
+        <div className="participant-grid" data-count={Math.min(snapshot.participants.length, 8)}>
+          {snapshot.participants.slice(0, 8).map((participant) => {
             const speaking = participant.speaking && participant.microphoneEnabled;
             const status = speaking ? "говорит" : participant.microphoneEnabled ? "Микрофон включён" : "Микрофон выключен";
             return (
@@ -129,13 +141,15 @@ export function CallView({
           className="call-microphone"
           role="switch"
           aria-checked={microphoneEnabled}
+          aria-keyshortcuts="M"
           aria-label={microphoneEnabled ? "Выключить микрофон" : "Включить микрофон"}
-          tooltip={microphoneEnabled ? "Микрофон включён" : "Микрофон выключен"}
+          tooltip={`${microphoneEnabled ? "Микрофон включён" : "Микрофон выключен"} · M`}
           disabled={microphoneBusy}
           onClick={() => setMicrophoneEnabled(!microphoneEnabled)}
         >{microphoneEnabled ? <MicIcon /> : <MicOffIcon />}</IconButton>
-        <IconButton aria-label="Копировать ссылку" tooltip="Копировать ссылку" onClick={copy}>
-          <LinkIcon />
+        <IconButton aria-label={nativeShare ? "Поделиться" : "Скопировать ссылку"}
+          tooltip={nativeShare ? "Поделиться" : "Скопировать ссылку"} onClick={share}>
+          {nativeShare ? <ShareIcon /> : <LinkIcon />}
         </IconButton>
         <IconButton
           ref={settingsButton}

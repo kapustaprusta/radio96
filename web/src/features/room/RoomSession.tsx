@@ -30,10 +30,21 @@ interface Attempt {
   reconnecting?: boolean;
 }
 
-export function RoomSession({ inviteCode, navigate }: { inviteCode: string; navigate: (path: string) => void }) {
+export function RoomSession({ inviteCode, navigate, createdRoomExpiry, onParticipantCountChange }: {
+  inviteCode: string;
+  navigate: (path: string) => void;
+  createdRoomExpiry?: string | null;
+  onParticipantCountChange?: (count: number | null) => void;
+}) {
   const [view, setView] = useState<View>({ kind: "prejoin" });
   const [preferences, setPreferences] = useState(defaultJoinPreferences);
   const attempt = useRef<Attempt | null>(null);
+
+  useEffect(() => {
+    onParticipantCountChange?.(view.kind === "call" ? view.snapshot.participants.length : null);
+  }, [onParticipantCountChange, view]);
+
+  useEffect(() => () => onParticipantCountChange?.(null), [onParticipantCountChange]);
 
   const dispose = useCallback(() => {
     const current = attempt.current;
@@ -136,7 +147,7 @@ export function RoomSession({ inviteCode, navigate }: { inviteCode: string; navi
   };
 
   if (view.kind === "prejoin") {
-    return <PreJoin initialPreferences={preferences} onJoin={begin} {...view} />;
+    return <PreJoin initialPreferences={preferences} onJoin={begin} createdRoomExpiry={createdRoomExpiry} {...view} />;
   }
 
   if (view.kind === "progress") {

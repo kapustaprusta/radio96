@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,8 +13,10 @@ import (
 	"time"
 
 	"github.com/livekit/protocol/auth"
+	livekitproto "github.com/livekit/protocol/livekit"
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/kapustaprusta/radio96/internal/config"
 	"github.com/kapustaprusta/radio96/internal/room"
@@ -58,7 +61,9 @@ func TestApplicationRoomFlow(t *testing.T) {
 				DatabaseURL: databaseURL, DatabaseConnectTimeout: 5 * time.Second, MediaRequestTimeout: time.Second,
 			}
 			if test.configureMedia {
-				cfg.LiveKitURL = "wss://livekit.example.test"
+				mediaServer := newTestLiveKitServer(t)
+				defer mediaServer.Close()
+				cfg.LiveKitURL = "ws" + strings.TrimPrefix(mediaServer.URL, "http")
 				cfg.LiveKitAPIKey = "test-key"
 				cfg.LiveKitAPISecret = strings.Repeat("x", 32)
 			}
@@ -122,6 +127,46 @@ func TestApplicationRoomFlow(t *testing.T) {
 			requestStatus(t, ctx, handler, http.MethodGet, "/healthz", "", http.StatusOK)
 		})
 	}
+}
+
+func newTestLiveKitServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		var result proto.Message
+		switch request.URL.Path {
+		case "/twirp/livekit.RoomService/ListRooms":
+			result = &livekitproto.ListRoomsResponse{}
+		case "/twirp/livekit.RoomService/CreateRoom":
+			payload, err := io.ReadAll(request.Body)
+			if err != nil {
+				t.Errorf("read CreateRoom request: %v", err)
+				response.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			var create livekitproto.CreateRoomRequest
+			if err := proto.Unmarshal(payload, &create); err != nil || create.MaxParticipants != room.MaxParticipants {
+				t.Errorf("CreateRoom max participants = %d, error = %v", create.MaxParticipants, err)
+				response.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			result = &livekitproto.Room{Name: create.Name, MaxParticipants: create.MaxParticipants}
+		default:
+			response.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		payload, err := proto.Marshal(result)
+		if err != nil {
+			t.Errorf("encode LiveKit response: %v", err)
+			response.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+
+		response.Header().Set("Content-Type", "application/protobuf")
+		_, _ = response.Write(payload)
+	}))
 }
 
 func requestStatus(

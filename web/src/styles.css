@@ -54,6 +54,11 @@ button {
   -webkit-tap-highlight-color: transparent;
 }
 
+.app-frame svg {
+  display: block;
+  flex-shrink: 0;
+}
+
 .app-frame {
   width: 100%;
   height: 100dvh;
@@ -75,6 +80,13 @@ button {
   z-index: 10;
 }
 
+.app-header__room-context {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .brand {
   min-height: 44px;
   display: inline-flex;
@@ -91,19 +103,15 @@ button {
 .brand__mark {
   width: 28px;
   height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1px;
-  border-radius: 8px;
-  background: var(--signal);
+  flex: 0 0 28px;
 }
 
-.brand__mark i {
-  width: 1.5px;
-  display: block;
-  border-radius: 99px;
-  background: var(--signal-text);
+.brand__mark-background {
+  fill: var(--signal);
+}
+
+.brand__mark-waveform {
+  fill: var(--signal-text);
 }
 
 .app-main {
@@ -284,6 +292,20 @@ button {
   font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.045em;
+}
+
+.created-room-notice {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.name-count {
+  display: block;
+  margin-top: 5px;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .state-stack h1 {
