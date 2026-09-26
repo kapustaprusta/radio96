@@ -13,6 +13,8 @@ import { PreJoin } from "./PreJoin";
 import { RoomError } from "./RoomError";
 import { RoomLeft } from "./RoomLeft";
 
+const microphoneNoticeDelayMs = 300;
+
 type View =
   | { kind: "prejoin"; microphoneError?: string; nameRejected?: boolean }
   | { kind: "progress"; step: 1 | 2 | 3 }
@@ -25,6 +27,7 @@ interface Attempt {
   session: MediaSession;
   unsubscribe?: () => void;
   timer?: number;
+  microphoneNoticeTimer?: number;
   startedAt?: number;
   restoredAt?: number;
   reconnecting?: boolean;
@@ -51,6 +54,7 @@ export function RoomSession({ inviteCode, navigate, createdRoomExpiry, onPartici
     attempt.current = null;
     if (!current) return;
     window.clearTimeout(current.timer);
+    window.clearTimeout(current.microphoneNoticeTimer);
     current.controller.abort();
     current.unsubscribe?.();
     void current.session.disconnect().catch(() => undefined);
@@ -97,9 +101,16 @@ export function RoomSession({ inviteCode, navigate, createdRoomExpiry, onPartici
       }
 
       window.clearTimeout(current.timer);
-      setView({ kind: "progress", step: 2 });
       if (nextPreferences.microphoneEnabled) {
-        await current.session.prepareMicrophone(nextPreferences.input.deviceId);
+        current.microphoneNoticeTimer = window.setTimeout(() => {
+          if (active()) setView({ kind: "progress", step: 2 });
+        }, microphoneNoticeDelayMs);
+        try {
+          await current.session.prepareMicrophone(nextPreferences.input.deviceId);
+        } finally {
+          window.clearTimeout(current.microphoneNoticeTimer);
+          current.microphoneNoticeTimer = undefined;
+        }
       }
       if (!active()) return;
 
