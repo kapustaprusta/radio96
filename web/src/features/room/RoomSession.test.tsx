@@ -74,6 +74,29 @@ describe("join and call", () => {
     expect(sessionStorage.length).toBe(0);
   });
 
+  it("does not flash a permission screen when microphone preparation finishes quickly", async () => {
+    const session = new FakeMediaSession();
+    let resolveMicrophone: (() => void) | undefined;
+    session.prepareMicrophone.mockReturnValueOnce(new Promise<void>((resolve) => { resolveMicrophone = resolve; }));
+    session.connect.mockReturnValue(new Promise<void>(() => undefined));
+    vi.mocked(createMediaSession).mockReturnValueOnce(session);
+    mockAPI();
+    render(<App />);
+    const input = await screen.findByRole("textbox", { name: "Никнейм" });
+    vi.useFakeTimers();
+    fireEvent.change(input, { target: { value: "Влад" } });
+    await act(async () => { fireEvent.submit(input.closest("form")!); });
+    expect(session.prepareMicrophone).toHaveBeenCalledOnce();
+    expect(screen.getByRole("heading", { name: "Подключаемся…" })).toBeInTheDocument();
+    expect(screen.queryByText("Подключаем микрофон")).not.toBeInTheDocument();
+
+    await act(async () => resolveMicrophone?.());
+    expect(session.connect).toHaveBeenCalledOnce();
+    await act(async () => { await vi.advanceTimersByTimeAsync(350); });
+    expect(screen.queryByText("Подключаем микрофон")).not.toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Отменить" })); });
+  });
+
   it.each(["rejects", "stalls"] as const)(
     "enters the call when prepared microphone publication $outcome",
     async (outcome) => {
@@ -200,7 +223,8 @@ describe("join and call", () => {
     const user = userEvent.setup();
     await user.type(await screen.findByRole("textbox", { name: "Никнейм" }), "Влад");
     await user.dblClick(screen.getByRole("button", { name: "Войти в разговор" }));
-    expect(await screen.findByRole("button", { name: "Ожидаем разрешение…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Подключаем микрофон…" })).toBeDisabled();
+    expect(screen.getByText("Если браузер запросил доступ, разреши его. Или войди без микрофона.")).toBeInTheDocument();
     expect(createMediaSession).toHaveBeenCalledOnce();
     await user.click(action === "cancel"
       ? screen.getByRole("button", { name: "Отменить" })
@@ -241,7 +265,7 @@ describe("join and call", () => {
     const fetchMock = mockAPI();
     render(<App />);
     const user = await join();
-    expect(await screen.findByRole("button", { name: "Ожидаем разрешение…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Подключаем микрофон…" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Войти без микрофона" }));
     await screen.findByRole("heading", { name: "Голосовая комната" });
     await act(async () => resolveMicrophone?.());
