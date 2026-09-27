@@ -56,8 +56,8 @@ export function HomePage({ navigate }: HomePageProps) {
   return (
     <section className="screen home-screen">
       <div className="home-copy">
-        <h1>Голосовой чат для игры с друзьями</h1>
-        <p>Создай комнату до 8 человек и отправь ссылку друзьям.</p>
+        <h1>Голосовой чат для игр с друзьями</h1>
+        <p>Создай комнату и отправь ссылку друзьям. До 8 человек в одном разговоре.</p>
 
         <button
           className="button button--primary home-action"
@@ -80,7 +80,7 @@ export function HomePage({ navigate }: HomePageProps) {
           {state === "error" && (
             <div className="inline-alert" role="alert">
               <AlertIcon />
-              <span>Не удалось создать комнату. Попробуй ещё раз.</span>
+              <span>Не удалось создать комнату.</span>
             </div>
           )}
         </div>

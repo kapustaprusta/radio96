@@ -28,8 +28,7 @@ describe("mockup screen structure", () => {
     { code: "room_not_found", title: "Комната не найдена", terminal: true },
     { code: "room_expired", title: "Ссылка больше не действует", terminal: true },
     { code: "room_finished", title: "Разговор завершён", terminal: true },
-    { code: "room_closed", title: "Разговор завершён", terminal: true },
-    { code: "room_full", title: "Комната уже заполнена", terminal: false },
+    { code: "room_full", title: "В комнате нет мест", terminal: false },
     { code: "connection_failed", title: "Не удалось подключиться", terminal: false },
     { code: "disconnected", title: "Связь прервалась", terminal: false },
   ])("matches terminal actions for $code", async ({ code, title, terminal }) => {
@@ -124,7 +123,7 @@ describe("mockup feedback", () => {
     const trigger = screen.getByRole("button", { name: "Копировать" });
     trigger.focus();
     rerender(<><button type="button">Копировать</button><InviteLinkFeedback copyState="fallback" onDismiss={onDismiss} /></>);
-    const dialog = screen.getByRole("dialog", { name: "Буфер обмена недоступен" });
+    const dialog = screen.getByRole("dialog", { name: "Не удалось скопировать ссылку" });
     const input = within(dialog).getByRole("textbox", { name: "Ссылка на комнату" });
     expect(input).toHaveValue(window.location.href);
     expect(input).toHaveFocus();
@@ -140,10 +139,10 @@ describe("mockup feedback", () => {
   });
 
   it("shows a real tooltip on keyboard focus and dismisses it on Escape", async () => {
-    render(<IconButton tooltip="Копировать ссылку" aria-label="Копировать ссылку"><LinkIcon /></IconButton>);
+    render(<IconButton tooltip="Скопировать ссылку" aria-label="Скопировать ссылку"><LinkIcon /></IconButton>);
     const user = userEvent.setup();
     await user.tab();
-    const button = screen.getByRole("button", { name: "Копировать ссылку" });
+    const button = screen.getByRole("button", { name: "Скопировать ссылку" });
     expect(button).toHaveAttribute("aria-describedby", screen.getByRole("tooltip").id);
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
@@ -151,12 +150,13 @@ describe("mockup feedback", () => {
   });
 
   it.each([0, 35, 100])("renders the wave from measured input level %i", (level) => {
-    const { rerender } = render(<AudioTestPanel level={level} />);
+    const bars = Array.from({ length: 28 }, () => ({ height: 4 + level / 100 * 32, opacity: 0.42 + level / 100 * 0.58 }));
+    const { rerender } = render(<AudioTestPanel kind="microphone" state="active" bars={bars} />);
     const meter = screen.getByRole("meter", { name: "Уровень микрофона" });
     expect(meter).toHaveAttribute("aria-valuenow", String(level));
     expect(meter.children).toHaveLength(28);
-    expect(screen.getByText("Слушаем")).toBeInTheDocument();
-    rerender(<AudioTestPanel />);
+    expect(screen.getByText("Проверяем")).toBeInTheDocument();
+    rerender(<AudioTestPanel kind="speaker" state="active" />);
     expect(screen.getByRole("img", { name: "Тестовый звук" })).toBeInTheDocument();
     expect(screen.getByText("Играет")).toBeInTheDocument();
   });

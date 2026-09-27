@@ -138,6 +138,11 @@ func TestConfiguredMediaGatewayCreatesBoundedRoom(t *testing.T) {
 
 type waitingMediaGateway struct{}
 
+func (waitingMediaGateway) ParticipantIdentities(ctx context.Context, _ string) ([]string, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
 func (waitingMediaGateway) RoomState(ctx context.Context, _ string) (*room.MediaRoomState, error) {
 	<-ctx.Done()
 

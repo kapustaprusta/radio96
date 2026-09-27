@@ -7,8 +7,10 @@ import (
 )
 
 const (
-	MaxParticipants  = 8
-	OpenRoomLifetime = time.Hour
+	MaxParticipants       = 8
+	OpenRoomLifetime      = time.Hour
+	ExpiredRecoveryWindow = 10 * time.Minute
+	EmptyRoomLifetime     = 10 * time.Minute
 )
 
 type Status string
@@ -21,25 +23,27 @@ const (
 )
 
 type Room struct {
-	id         string
-	name       string
-	status     Status
-	inviteCode *InviteCode
-	createdAt  time.Time
-	expiresAt  time.Time
-	startedAt  *time.Time
-	finishedAt *time.Time
+	id          string
+	name        string
+	status      Status
+	inviteCode  *InviteCode
+	createdAt   time.Time
+	expiresAt   time.Time
+	startedAt   *time.Time
+	lastEmptyAt *time.Time
+	finishedAt  *time.Time
 }
 
 type RestoreRoomParams struct {
-	ID         string
-	InviteCode *InviteCode
-	Name       string
-	Status     Status
-	CreatedAt  time.Time
-	ExpiresAt  time.Time
-	StartedAt  *time.Time
-	FinishedAt *time.Time
+	ID          string
+	InviteCode  *InviteCode
+	Name        string
+	Status      Status
+	CreatedAt   time.Time
+	ExpiresAt   time.Time
+	StartedAt   *time.Time
+	LastEmptyAt *time.Time
+	FinishedAt  *time.Time
 }
 
 func New(id string, inviteCode *InviteCode, name string, createdAt time.Time) (*Room, error) {
@@ -79,6 +83,7 @@ func Restore(params RestoreRoomParams) (*Room, error) {
 	createdAt := params.CreatedAt.UTC()
 	expiresAt := params.ExpiresAt.UTC()
 	startedAt := normalizedTime(params.StartedAt)
+	lastEmptyAt := normalizedTime(params.LastEmptyAt)
 	finishedAt := normalizedTime(params.FinishedAt)
 
 	if startedAt != nil && (startedAt.IsZero() || startedAt.Before(createdAt)) {
@@ -89,19 +94,25 @@ func Restore(params RestoreRoomParams) (*Room, error) {
 		return nil, fmt.Errorf("%w: finish time cannot precede start", ErrInvalidRoom)
 	}
 
+	if lastEmptyAt != nil && (lastEmptyAt.IsZero() || startedAt == nil || lastEmptyAt.Before(*startedAt) ||
+		params.Status == StatusOpen || params.Status == StatusExpired) {
+		return nil, fmt.Errorf("%w: last empty time does not match room status", ErrInvalidRoom)
+	}
+
 	if err := validateRestoredStatus(params.Status, startedAt, finishedAt); err != nil {
 		return nil, err
 	}
 
 	return &Room{
-		id:         params.ID,
-		name:       params.Name,
-		status:     params.Status,
-		inviteCode: params.InviteCode,
-		createdAt:  createdAt,
-		expiresAt:  expiresAt,
-		startedAt:  startedAt,
-		finishedAt: finishedAt,
+		id:          params.ID,
+		name:        params.Name,
+		status:      params.Status,
+		inviteCode:  params.InviteCode,
+		createdAt:   createdAt,
+		expiresAt:   expiresAt,
+		startedAt:   startedAt,
+		lastEmptyAt: lastEmptyAt,
+		finishedAt:  finishedAt,
 	}, nil
 }
 
@@ -174,6 +185,22 @@ func (r *Room) FinishedAt() (time.Time, bool) {
 	return *r.finishedAt, true
 }
 
+func (r *Room) LastEmptyAt() (time.Time, bool) {
+	if r.lastEmptyAt == nil {
+		return time.Time{}, false
+	}
+
+	return *r.lastEmptyAt, true
+}
+
+func (r *Room) EmptyDeadline() (time.Time, bool) {
+	if r.status != StatusActive || r.lastEmptyAt == nil {
+		return time.Time{}, false
+	}
+
+	return r.lastEmptyAt.Add(EmptyRoomLifetime), true
+}
+
 func (r *Room) ValidateJoin(at time.Time) error {
 	switch r.status {
 	case StatusOpen:
@@ -199,6 +226,27 @@ func (r *Room) Start(at time.Time) error {
 	}
 
 	if r.status != StatusOpen {
+		return transitionError(r.status, StatusActive)
+	}
+
+	at, err := r.transitionTime(at)
+	if err != nil {
+		return err
+	}
+
+	r.status = StatusActive
+	r.startedAt = &at
+
+	return nil
+}
+
+// RecoverStarted is only for a room proven active by LiveKit after an expiry race.
+func (r *Room) RecoverStarted(at time.Time) error {
+	if r.status == StatusOpen {
+		return r.Start(at)
+	}
+
+	if r.status != StatusExpired {
 		return transitionError(r.status, StatusActive)
 	}
 

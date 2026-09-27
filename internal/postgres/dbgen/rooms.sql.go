@@ -66,6 +66,7 @@ SELECT
     created_at,
     expires_at,
     started_at,
+    last_empty_at,
     finished_at
 FROM rooms
 WHERE invite_code_hash = $1
@@ -73,13 +74,14 @@ LIMIT 1
 `
 
 type FindRoomByInviteCodeHashRow struct {
-	ID         string             `db:"id"`
-	Name       string             `db:"name"`
-	Status     string             `db:"status"`
-	CreatedAt  pgtype.Timestamptz `db:"created_at"`
-	ExpiresAt  pgtype.Timestamptz `db:"expires_at"`
-	StartedAt  pgtype.Timestamptz `db:"started_at"`
-	FinishedAt pgtype.Timestamptz `db:"finished_at"`
+	ID          string             `db:"id"`
+	Name        string             `db:"name"`
+	Status      string             `db:"status"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at"`
+	ExpiresAt   pgtype.Timestamptz `db:"expires_at"`
+	StartedAt   pgtype.Timestamptz `db:"started_at"`
+	LastEmptyAt pgtype.Timestamptz `db:"last_empty_at"`
+	FinishedAt  pgtype.Timestamptz `db:"finished_at"`
 }
 
 func (q *Queries) FindRoomByInviteCodeHash(ctx context.Context, inviteCodeHash []byte) (FindRoomByInviteCodeHashRow, error) {
@@ -92,6 +94,7 @@ func (q *Queries) FindRoomByInviteCodeHash(ctx context.Context, inviteCodeHash [
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.StartedAt,
+		&i.LastEmptyAt,
 		&i.FinishedAt,
 	)
 	return i, err
@@ -101,21 +104,24 @@ const updateRoom = `-- name: UpdateRoom :execrows
 UPDATE rooms
 SET
     status = $1,
-    started_at = $2,
-    finished_at = $3
+    started_at = COALESCE(started_at, $2),
+    finished_at = COALESCE(finished_at, $3)
 WHERE id = $4
+  AND last_empty_at IS NOT DISTINCT FROM $5::timestamptz
   AND (
       status = $1
       OR (status = 'open' AND $1::TEXT IN ('active', 'expired'))
+      OR (status = 'expired' AND $1::TEXT = 'active')
       OR (status = 'active' AND $1::TEXT = 'finished')
   )
 `
 
 type UpdateRoomParams struct {
-	Status     string             `db:"status"`
-	StartedAt  pgtype.Timestamptz `db:"started_at"`
-	FinishedAt pgtype.Timestamptz `db:"finished_at"`
-	ID         string             `db:"id"`
+	Status              string             `db:"status"`
+	StartedAt           pgtype.Timestamptz `db:"started_at"`
+	FinishedAt          pgtype.Timestamptz `db:"finished_at"`
+	ID                  string             `db:"id"`
+	ExpectedLastEmptyAt pgtype.Timestamptz `db:"expected_last_empty_at"`
 }
 
 func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (int64, error) {
@@ -124,6 +130,7 @@ func (q *Queries) UpdateRoom(ctx context.Context, arg UpdateRoomParams) (int64, 
 		arg.StartedAt,
 		arg.FinishedAt,
 		arg.ID,
+		arg.ExpectedLastEmptyAt,
 	)
 	if err != nil {
 		return 0, err

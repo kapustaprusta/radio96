@@ -75,14 +75,28 @@ func (repository *fakeRoomRepository) Update(_ context.Context, updatedRoom *Roo
 }
 
 type fakeMediaGateway struct {
-	state         *MediaRoomState
-	token         *ParticipantToken
-	stateErr      error
-	tokenErr      error
-	stateRoomName string
-	tokenRequest  ParticipantTokenRequest
-	stateCalls    int
-	tokenCalls    int
+	state           *MediaRoomState
+	participants    []string
+	token           *ParticipantToken
+	stateErr        error
+	participantsErr error
+	tokenErr        error
+	stateRoomName   string
+	tokenRequest    ParticipantTokenRequest
+	stateCalls      int
+	tokenCalls      int
+}
+
+func (gateway *fakeMediaGateway) ParticipantIdentities(_ context.Context, _ string) ([]string, error) {
+	return gateway.participants, gateway.participantsErr
+}
+
+type fakeAdmissionStore struct {
+	err error
+}
+
+func (store *fakeAdmissionStore) Reserve(_ context.Context, _, _ string, _ []string, _ time.Time, _ int) error {
+	return store.err
 }
 
 func (gateway *fakeMediaGateway) RoomState(_ context.Context, roomName string) (*MediaRoomState, error) {

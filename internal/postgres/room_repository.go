@@ -78,14 +78,15 @@ func (repository *RoomRepository) FindByInviteCode(
 	}
 
 	restoredRoom, err := room.Restore(room.RestoreRoomParams{
-		ID:         record.ID,
-		InviteCode: inviteCode,
-		Name:       record.Name,
-		Status:     room.Status(record.Status),
-		CreatedAt:  createdAt,
-		ExpiresAt:  expiresAt,
-		StartedAt:  optionalTimestampValue(record.StartedAt),
-		FinishedAt: optionalTimestampValue(record.FinishedAt),
+		ID:          record.ID,
+		InviteCode:  inviteCode,
+		Name:        record.Name,
+		Status:      room.Status(record.Status),
+		CreatedAt:   createdAt,
+		ExpiresAt:   expiresAt,
+		StartedAt:   optionalTimestampValue(record.StartedAt),
+		LastEmptyAt: optionalTimestampValue(record.LastEmptyAt),
+		FinishedAt:  optionalTimestampValue(record.FinishedAt),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("restore room from database: %w", err)
@@ -100,10 +101,11 @@ func (repository *RoomRepository) Update(ctx context.Context, updatedRoom *room.
 	}
 
 	rowsAffected, err := repository.queries.UpdateRoom(ctx, dbgen.UpdateRoomParams{
-		ID:         updatedRoom.ID(),
-		Status:     string(updatedRoom.Status()),
-		StartedAt:  roomTimestamp(updatedRoom.StartedAt),
-		FinishedAt: roomTimestamp(updatedRoom.FinishedAt),
+		ID:                  updatedRoom.ID(),
+		Status:              string(updatedRoom.Status()),
+		StartedAt:           roomTimestamp(updatedRoom.StartedAt),
+		ExpectedLastEmptyAt: roomTimestamp(updatedRoom.LastEmptyAt),
+		FinishedAt:          roomTimestamp(updatedRoom.FinishedAt),
 	})
 	if err != nil {
 		return fmt.Errorf("update room: %w", err)
@@ -148,6 +150,14 @@ func optionalTimestampValue(value pgtype.Timestamptz) *time.Time {
 	normalized := value.Time.UTC()
 
 	return &normalized
+}
+
+func optionalTimestampOrZero(value pgtype.Timestamptz) time.Time {
+	if !value.Valid {
+		return time.Time{}
+	}
+
+	return value.Time.UTC()
 }
 
 var (

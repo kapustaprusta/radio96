@@ -16,8 +16,9 @@ export interface paths {
         /**
          * Create a room
          * @description Creates an open room and returns its opaque application ID together
-         *     with the invite URL. The LiveKit room is created later, when the first
-         *     participant connects.
+         *     with the invite URL. The LiveKit room is prepared later, immediately
+         *     before the first participant token is issued; issuing a token alone
+         *     does not mark the application room active.
          */
         post: operations["createRoom"];
         delete?: never;
@@ -204,7 +205,7 @@ export interface components {
              * @example room_finished
              * @example room_full
              * @example media_unavailable
-             * @example invalid_webhook
+             * @example invalid_webhook_signature
              * @example internal_error
              */
             code: string;
@@ -265,6 +266,7 @@ export interface operations {
                 };
             };
             500: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
         };
     };
     getRoom: {
@@ -360,6 +362,7 @@ export interface operations {
             400: components["responses"]["ErrorResponse"];
             401: components["responses"]["ErrorResponse"];
             500: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
         };
     };
 }

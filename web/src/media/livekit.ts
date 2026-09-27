@@ -1,6 +1,5 @@
 import {
   ConnectionError,
-  ConnectionErrorReason,
   DisconnectReason,
   Room,
   RoomEvent,
@@ -91,9 +90,8 @@ class LiveKitSession implements MediaSession {
       this.activeRoom();
       this.onConnected();
     } catch (error) {
-      const failure = this.snapshot.disconnectReason === "finished" ? new MediaError("room_finished") : connectionError(error);
-      const reason = failure.code === "room_finished" ? "finished" : "connection";
-      await this.close(this.snapshot.disconnectReason ?? reason);
+      const failure = connectionError(error);
+      await this.close(this.snapshot.disconnectReason ?? "connection");
       // A connection may finish after a preceding disconnect has already resolved.
       await room.disconnect(true).catch(() => undefined);
       throw failure;
@@ -408,9 +406,6 @@ function connectionError(error: unknown): MediaError {
   if (error instanceof MediaError) return error;
   if (error instanceof ConnectionError && /room.{0,20}full|max(?:imum)?.{0,30}participant/i.test(error.message)) {
     return new MediaError("room_full");
-  }
-  if (error instanceof ConnectionError && error.reason === ConnectionErrorReason.LeaveRequest && isFinished(error.context)) {
-    return new MediaError("room_finished");
   }
   return new MediaError("connection_failed");
 }

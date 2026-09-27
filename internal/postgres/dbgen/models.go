@@ -17,4 +17,19 @@ type Room struct {
 	ExpiresAt      pgtype.Timestamptz `db:"expires_at"`
 	StartedAt      pgtype.Timestamptz `db:"started_at"`
 	FinishedAt     pgtype.Timestamptz `db:"finished_at"`
+	LastEmptyAt    pgtype.Timestamptz `db:"last_empty_at"`
+}
+
+type RoomAdmission struct {
+	RoomName            string             `db:"room_name"`
+	ParticipantIdentity string             `db:"participant_identity"`
+	ExpiresAt           pgtype.Timestamptz `db:"expires_at"`
+}
+
+type WebhookEvent struct {
+	ID          string             `db:"id"`
+	RoomName    string             `db:"room_name"`
+	EventType   string             `db:"event_type"`
+	CreatedAt   pgtype.Timestamptz `db:"created_at"`
+	ProcessedAt pgtype.Timestamptz `db:"processed_at"`
 }

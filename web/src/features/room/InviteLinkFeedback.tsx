@@ -40,8 +40,8 @@ function ClipboardFallback({ onDismiss }: { onDismiss: () => void }) {
       }}>
       <div className="state-stack">
         <span className="state-icon" aria-hidden="true"><ClipboardOffIcon /></span>
-        <h1 id="clipboard-title">Буфер обмена недоступен</h1>
-        <p>Попробуй скопировать ссылку вручную.</p>
+        <h1 id="clipboard-title">Не удалось скопировать ссылку</h1>
+        <p>Скопируй ссылку вручную из поля ниже.</p>
         <input ref={input} className="text-input" value={window.location.href} readOnly
           aria-label="Ссылка на комнату" onFocus={(event) => event.currentTarget.select()} />
         <div className="state-actions">
