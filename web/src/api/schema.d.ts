@@ -44,7 +44,9 @@ export interface paths {
         /**
          * Get public room status
          * @description Returns the application-level room status. Participant information and
-         *     the internal LiveKit room name are never exposed.
+         *     the internal LiveKit room name are never exposed. Once a conversation
+         *     has started, the room remains active for ten minutes after its last
+         *     participant leaves, even if the LiveKit media room closes sooner.
          */
         get: operations["getRoom"];
         put?: never;
@@ -77,7 +79,8 @@ export interface paths {
          *     connection credentials. Duplicate display names are allowed. Local
          *     microphone availability and browser permission are not prerequisites:
          *     the participant may connect without publishing an audio track and
-         *     start publishing a microphone later with the same credentials.
+         *     start publishing a microphone later with the same credentials. A user
+         *     may rejoin during the ten-minute empty-room grace period.
          */
         post: operations["joinRoom"];
         delete?: never;
