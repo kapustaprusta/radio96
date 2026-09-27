@@ -5,6 +5,8 @@ import { CloseIcon, MicIcon, PlayIcon, StopIcon, VolumeIcon } from "../../compon
 import { playTestTone } from "./audioDeviceTests";
 import { AudioTestPanel } from "./AudioTestPanel";
 import { DeviceSelect } from "./DeviceSelect";
+import { idleBars, sampleEqualizer } from "./equalizer";
+import type { AudioBar } from "./equalizer";
 
 export interface AudioInputChoice {
   deviceId: string;
@@ -15,6 +17,7 @@ interface AudioSettingsDialogProps {
   selectedInput: AudioInputChoice;
   selectedOutputId: string;
   microphoneGranted?: boolean;
+  onMicrophonePermissionChange?: (state: PermissionState, announce?: boolean) => void;
   onInputChange: (device: AudioInputChoice) => void | Promise<void>;
   onOutputChange: (deviceId: string) => void | Promise<void>;
   onClose: () => void;
@@ -24,30 +27,33 @@ const defaultInput = { deviceId: "default", label: "Микрофон по умо
 const defaultOutput = { deviceId: "default", label: "Динамики по умолчанию" };
 
 export function AudioSettingsDialog({
-  selectedInput, selectedOutputId, microphoneGranted = false, onInputChange, onOutputChange, onClose,
+  selectedInput, selectedOutputId, microphoneGranted = false, onMicrophonePermissionChange,
+  onInputChange, onOutputChange, onClose,
 }: AudioSettingsDialogProps) {
   const [inputs, setInputs] = useState([defaultInput]);
   const [outputs, setOutputs] = useState([defaultOutput]);
   const [granted, setGranted] = useState(microphoneGranted);
   const [pending, setPending] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [speakerTesting, setSpeakerTesting] = useState(false);
+  const [micTestState, setMicTestState] = useState<"idle" | "pending" | "active" | "error">("idle");
+  const [speakerTestState, setSpeakerTestState] = useState<"idle" | "pending" | "active" | "error">("idle");
   const [outputPending, setOutputPending] = useState(false);
-  const [level, setLevel] = useState(0);
+  const [bars, setBars] = useState<AudioBar[]>(idleBars);
   const [micError, setMicError] = useState("");
   const [outputError, setOutputError] = useState("");
   const dialog = useRef<HTMLElement>(null);
   const active = useRef(true);
   const micPending = useRef(false);
-  const microphoneTest = useRef<{ stream: MediaStream; context?: AudioContext; timer?: number } | null>(null);
+  const microphoneTest = useRef<{ stream: MediaStream; context?: AudioContext; frame?: number } | null>(null);
   const speakerTest = useRef<AbortController | null>(null);
   const supportsOutputSelection = "setSinkId" in HTMLMediaElement.prototype;
+  const testing = micTestState === "active";
+  const speakerTesting = speakerTestState === "pending" || speakerTestState === "active";
 
   const stopMicrophone = useCallback(() => {
     const test = microphoneTest.current;
     microphoneTest.current = null;
     if (!test) return;
-    window.clearInterval(test.timer);
+    window.cancelAnimationFrame(test.frame ?? 0);
     test.stream.getTracks().forEach((track) => track.stop());
     void test.context?.close().catch(() => undefined);
   }, []);
@@ -56,8 +62,11 @@ export function AudioSettingsDialog({
     if (!active.current) return;
     setInputs(deviceOptions(devices, "audioinput", defaultInput));
     setOutputs(deviceOptions(devices, "audiooutput", defaultOutput));
-    if (devices.some((device) => device.kind === "audioinput" && device.label)) setGranted(true);
-  }, []);
+    if (devices.some((device) => device.kind === "audioinput" && device.label)) {
+      setGranted(true);
+      onMicrophonePermissionChange?.("granted");
+    }
+  }, [onMicrophonePermissionChange]);
 
   useEffect(() => {
     active.current = true;
@@ -65,8 +74,14 @@ export function AudioSettingsDialog({
     const update = () => { void navigator.mediaDevices?.enumerateDevices().then(updateDevices).catch(() => undefined); };
     navigator.mediaDevices?.addEventListener?.("devicechange", update);
     let permission: PermissionStatus | undefined;
+    let permissionInitialized = false;
     const permissionChanged = () => {
-      if (active.current && permission) setGranted(permission.state === "granted");
+      if (active.current && permission) {
+        const allowed = permission.state === "granted";
+        setGranted(allowed);
+        onMicrophonePermissionChange?.(permission.state, permissionInitialized);
+        permissionInitialized = true;
+      }
     };
     void navigator.permissions?.query({ name: "microphone" as PermissionName }).then((result) => {
       if (!active.current) return;
@@ -96,7 +111,7 @@ export function AudioSettingsDialog({
       navigator.mediaDevices?.removeEventListener?.("devicechange", update);
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [updateDevices, onClose, stopMicrophone]);
+  }, [updateDevices, onClose, onMicrophonePermissionChange, stopMicrophone]);
 
   const requestMicrophone = async (test: boolean) => {
     if (micPending.current) return;
@@ -104,6 +119,10 @@ export function AudioSettingsDialog({
     setPending(true);
     setMicError("");
     stopMicrophone();
+    if (test) {
+      setMicTestState("pending");
+      setBars(idleBars);
+    }
     if (test) speakerTest.current?.abort();
     let stream: MediaStream | undefined;
     try {
@@ -113,28 +132,39 @@ export function AudioSettingsDialog({
       if (!active.current) return;
       microphoneTest.current = { stream };
       setGranted(true);
+      onMicrophonePermissionChange?.("granted", true);
       await navigator.mediaDevices.enumerateDevices().then(updateDevices);
       if (!active.current || !test) return;
       const context = new AudioContext();
       microphoneTest.current = { stream, context };
       const analyser = context.createAnalyser();
-      analyser.fftSize = 256;
+      analyser.fftSize = 2048;
+      analyser.smoothingTimeConstant = 0.76;
+      analyser.minDecibels = -90;
+      analyser.maxDecibels = -20;
       context.createMediaStreamSource(stream).connect(analyser);
       await context.resume();
       if (!active.current || !microphoneTest.current) return;
-      const data = new Uint8Array(analyser.fftSize);
-      microphoneTest.current.timer = window.setInterval(() => {
-        analyser.getByteTimeDomainData(data);
-        const power = data.reduce((sum, sample) => sum + ((sample - 128) / 128) ** 2, 0) / data.length;
-        setLevel(Math.min(100, Math.sqrt(power) * 400));
-      }, 100);
-      setTesting(true);
+      const spectrum = new Uint8Array(analyser.frequencyBinCount);
+      let previous = idleBars;
+      const draw = () => {
+        const currentTest = microphoneTest.current;
+        if (!active.current || !currentTest || currentTest.stream !== stream) return;
+        previous = sampleEqualizer(analyser, spectrum, previous);
+        setBars(previous);
+        currentTest.frame = window.requestAnimationFrame(draw);
+      };
+      setMicTestState("active");
+      draw();
     } catch (error: unknown) {
       stopMicrophone();
       if (active.current) {
-        setTesting(false);
+        setMicTestState(test ? "error" : "idle");
         const name = error instanceof DOMException || error instanceof Error ? error.name : "";
-        if (name === "NotAllowedError" || name === "SecurityError") setGranted(false);
+        if (name === "NotAllowedError" || name === "SecurityError") {
+          setGranted(false);
+          onMicrophonePermissionChange?.("denied", true);
+        }
         setMicError(name === "NotFoundError" ? "Микрофон не найден. Подключи устройство."
           : name === "NotAllowedError" || name === "SecurityError"
             ? "Разреши доступ к микрофону в настройках браузера."
@@ -151,18 +181,30 @@ export function AudioSettingsDialog({
   const testSpeakers = async () => {
     if (speakerTest.current) { speakerTest.current.abort(); return; }
     stopMicrophone();
-    setTesting(false);
-    setLevel(0);
+    setMicTestState("idle");
+    setBars(idleBars);
     const controller = new AbortController();
     speakerTest.current = controller;
-    setSpeakerTesting(true);
+    setSpeakerTestState("pending");
     setOutputError("");
-    try { await playTestTone(selectedOutputId, controller.signal); }
-    catch { if (active.current && !controller.signal.aborted) setOutputError("Не удалось проверить динамики."); }
+    let failed = false;
+    try {
+      await playTestTone(selectedOutputId, controller.signal, (nextBars) => {
+        if (!active.current || controller.signal.aborted) return;
+        setBars(nextBars);
+        setSpeakerTestState("active");
+      });
+    } catch {
+      if (active.current && !controller.signal.aborted) {
+        failed = true;
+        setOutputError("Не удалось проверить динамики.");
+        setSpeakerTestState("error");
+      }
+    }
     finally {
       if (speakerTest.current === controller) {
         speakerTest.current = null;
-        if (active.current) setSpeakerTesting(false);
+        if (active.current && !failed) setSpeakerTestState("idle");
       }
     }
   };
@@ -182,7 +224,7 @@ export function AudioSettingsDialog({
               {granted && (
                 <button className="button button--secondary device-panel__test" type="button"
                   aria-pressed={testing} disabled={pending} onClick={() => {
-                    if (testing) { stopMicrophone(); setTesting(false); setLevel(0); }
+                    if (testing) { stopMicrophone(); setMicTestState("idle"); setBars(idleBars); }
                     else void requestMicrophone(true);
                   }}>{testing ? <StopIcon /> : <PlayIcon />}{testing ? "Остановить" : "Проверить"}</button>
               )}
@@ -194,7 +236,8 @@ export function AudioSettingsDialog({
                 setPending(true);
                 setMicError("");
                 stopMicrophone();
-                setTesting(false);
+                setMicTestState("idle");
+                setBars(idleBars);
                 try { await onInputChange(input); }
                 catch { if (active.current) setMicError("Не удалось выбрать микрофон."); }
                 finally { if (active.current) setPending(false); }
@@ -205,9 +248,9 @@ export function AudioSettingsDialog({
                   {pending ? "Запрашиваем доступ…" : "Разрешить доступ"}
                 </button>
               </div>
-            ) : <p className="sr-only" role="status">Доступ разрешён</p>}
-            {testing && <AudioTestPanel level={level} />}
-            {micError && <p className="field-error" role="alert">{micError}</p>}
+            ) : <p className="sr-only" role="status">Доступ к микрофону разрешён</p>}
+            {micTestState !== "idle" && <AudioTestPanel kind="microphone" state={micTestState} bars={bars} error={micError} />}
+            {micError && <p className="field-error" role={micTestState === "error" ? undefined : "alert"}>{micError}</p>}
           </section>
           {supportsOutputSelection && (
             <section className="device-panel">
@@ -221,13 +264,16 @@ export function AudioSettingsDialog({
               <DeviceSelect id="audio-output" label="Выбрать динамики" value={selectedOutputId} options={outputs}
                 disabled={speakerTesting || outputPending} onChange={async (deviceId) => {
                   setOutputError("");
+                  setSpeakerTestState("idle");
+                  setBars(idleBars);
                   setOutputPending(true);
                   try { await onOutputChange(deviceId); }
                   catch { if (active.current) setOutputError("Не удалось выбрать динамики."); }
                   finally { if (active.current) setOutputPending(false); }
                 }} />
-              {speakerTesting && <AudioTestPanel />}
-              {outputError && <p className="field-error" role="alert">{outputError}</p>}
+              {speakerTestState !== "idle" && <AudioTestPanel kind="speaker" state={speakerTestState}
+                bars={bars} error={outputError} />}
+              {outputError && speakerTestState !== "error" && <p className="field-error" role="alert">{outputError}</p>}
             </section>
           )}
         </div>
@@ -238,9 +284,10 @@ export function AudioSettingsDialog({
 }
 
 function deviceOptions(devices: MediaDeviceInfo[], kind: MediaDeviceKind, fallback: AudioInputChoice): AudioInputChoice[] {
+  const defaultDevice = devices.find((device) => device.kind === kind && device.deviceId === "default");
   const options = devices.filter((device) => device.kind === kind && device.deviceId !== "default").map((device, index) => ({
     deviceId: device.deviceId,
     label: device.label || `${kind === "audioinput" ? "Микрофон" : "Динамики"} ${index + 1}`,
   }));
-  return [fallback, ...options];
+  return [{ ...fallback, label: defaultDevice?.label || fallback.label }, ...options];
 }

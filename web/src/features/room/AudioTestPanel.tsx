@@ -1,20 +1,32 @@
-const bars = Array.from({ length: 28 }, (_, index) => index);
+import { idleBars } from "./equalizer";
+import type { AudioBar } from "./equalizer";
 
-export function AudioTestPanel({ level }: { level?: number }) {
-  const microphone = level !== undefined;
+type TestState = "pending" | "active" | "error";
+
+export function AudioTestPanel({ kind, state, bars = idleBars, error }: {
+  kind: "microphone" | "speaker";
+  state: TestState;
+  bars?: readonly AudioBar[];
+  error?: string;
+}) {
+  const microphone = kind === "microphone";
+  const title = state === "error" ? microphone ? "Не удалось включить микрофон" : error ?? "Не удалось проверить динамики"
+    : state === "pending" ? microphone ? "Подключаем микрофон…" : "Готовим тестовый звук…"
+      : microphone ? "Скажи что-нибудь" : "Играет тестовый звук";
+  const status = state === "error" ? "Ошибка" : state === "pending" ? "Подожди"
+    : microphone ? "Проверяем" : "Играет";
+  const level = Math.round(Math.max(...bars.map((bar) => bar.height - 4), 0) / 32 * 100);
   return (
-    <div className="audio-test">
-      <div className="audio-test__header" role="status">
-        <strong>{microphone ? "Говорите в микрофон" : "Воспроизводим тестовый звук"}</strong>
-        <span className="audio-test__status">{microphone ? "Слушаем" : "Играет"}</span>
+    <div className="audio-test" data-state={state}>
+      <div className="audio-test__header" role={state === "error" ? "alert" : "status"}>
+        <strong>{title}</strong>
+        <span className="audio-test__status">{status}</span>
       </div>
-      <div className="audio-test__wave" data-playback={!microphone} role={microphone ? "meter" : "img"}
+      <div className="audio-test__wave" role={microphone ? "meter" : "img"}
         aria-label={microphone ? "Уровень микрофона" : "Тестовый звук"}
-        aria-valuemin={microphone ? 0 : undefined} aria-valuemax={microphone ? 100 : undefined} aria-valuenow={level}>
-        {bars.map((index) => <span key={index} aria-hidden="true" style={{
-          height: 5 + (level ?? 60) / 100 * 39 * (0.35 + 0.65 * Math.sin((index + 1) / 29 * Math.PI)),
-          animationDelay: `${index * -70}ms`,
-        }} />)}
+        aria-valuemin={microphone ? 0 : undefined} aria-valuemax={microphone ? 100 : undefined}
+        aria-valuenow={microphone ? level : undefined}>
+        {bars.map((bar, index) => <span key={index} aria-hidden="true" style={{ height: bar.height, opacity: bar.opacity }} />)}
       </div>
     </div>
   );

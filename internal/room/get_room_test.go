@@ -85,6 +85,16 @@ func TestGetRoomExecute(t *testing.T) {
 			wantStatus:    StatusActive,
 			wantFindCalls: 1,
 		},
+		{
+			name: "empty active room remains available within ten minutes", inviteCode: validInviteCode,
+			prepareRoom: idleTestRoom, now: testCreatedAt.Add(2*time.Minute + EmptyRoomLifetime - time.Second),
+			wantStatus: StatusActive, wantFindCalls: 1,
+		},
+		{
+			name: "empty active room finishes at ten minutes", inviteCode: validInviteCode,
+			prepareRoom: idleTestRoom, now: testCreatedAt.Add(2*time.Minute + EmptyRoomLifetime),
+			wantStatus: StatusFinished, wantFindCalls: 1, wantUpdateCalls: 1,
+		},
 	}
 
 	for _, test := range tests {
@@ -130,6 +140,60 @@ func TestGetRoomExecute(t *testing.T) {
 
 			if repository.findCode != nil && repository.findCode.Value() != test.inviteCode {
 				t.Errorf("FindByInviteCode() code = %q, want %q", repository.findCode.Value(), test.inviteCode)
+			}
+		})
+	}
+}
+
+func TestGetRoomExpiredLinkChecksRealMediaState(t *testing.T) {
+	tests := []struct {
+		name          string
+		initialStatus Status
+		now           time.Time
+		state         *MediaRoomState
+		stateErr      error
+		wantStatus    Status
+		wantErr       error
+		wantUpdates   int
+	}{
+		{name: "conversation still active", state: &MediaRoomState{Exists: true, ParticipantCount: 1},
+			wantStatus: StatusActive, wantUpdates: 1},
+		{name: "recover a recently expired active conversation", initialStatus: StatusExpired,
+			now:   testCreatedAt.Add(OpenRoomLifetime + time.Minute),
+			state: &MediaRoomState{Exists: true, ParticipantCount: 1}, wantStatus: StatusActive, wantUpdates: 1},
+		{name: "link was unused", state: &MediaRoomState{}, wantStatus: StatusExpired, wantUpdates: 1},
+		{name: "media unavailable", stateErr: errors.New("LiveKit unavailable"),
+			wantStatus: StatusOpen, wantErr: ErrMediaUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			foundRoom := newTestRoom(t)
+			if test.initialStatus == StatusExpired {
+				if err := foundRoom.Expire(foundRoom.ExpiresAt()); err != nil {
+					t.Fatalf("Expire() error = %v", err)
+				}
+			}
+
+			repository := &fakeRoomRepository{foundRoom: foundRoom}
+			media := &fakeMediaGateway{state: test.state, stateErr: test.stateErr}
+			now := test.now
+			if now.IsZero() {
+				now = testCreatedAt.Add(2 * OpenRoomLifetime)
+			}
+
+			useCase := NewGetRoomWithMedia(repository, media, &fakeClock{now: now})
+			got, err := useCase.Execute(t.Context(), foundRoom.InviteCode().Value())
+			if !errors.Is(err, test.wantErr) {
+				t.Fatalf("Execute() error = %v, want %v", err, test.wantErr)
+			}
+
+			if test.wantErr == nil && (got == nil || got.Status() != test.wantStatus) {
+				t.Errorf("room = %v, want status %q", got, test.wantStatus)
+			}
+
+			if repository.updateCalls != test.wantUpdates || media.stateCalls != 1 {
+				t.Errorf("update calls = %d, media calls = %d; want %d, 1", repository.updateCalls,
+					media.stateCalls, test.wantUpdates)
 			}
 		})
 	}

@@ -121,6 +121,14 @@ func TestRestore(t *testing.T) {
 			},
 		},
 		{
+			name: "active room waiting for rejoin",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = StatusActive
+				params.StartedAt = timePointer(testCreatedAt.Add(time.Minute))
+				params.LastEmptyAt = timePointer(testCreatedAt.Add(2 * time.Minute))
+			},
+		},
+		{
 			name: "finished room",
 			mutate: func(params *RestoreRoomParams) {
 				params.Status = StatusFinished
@@ -199,6 +207,22 @@ func TestRestore(t *testing.T) {
 			wantErr: ErrInvalidRoom,
 		},
 		{
+			name: "open room cannot be empty after a call",
+			mutate: func(params *RestoreRoomParams) {
+				params.LastEmptyAt = timePointer(testCreatedAt.Add(time.Minute))
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
+			name: "empty time cannot precede start",
+			mutate: func(params *RestoreRoomParams) {
+				params.Status = StatusActive
+				params.StartedAt = timePointer(testCreatedAt.Add(2 * time.Minute))
+				params.LastEmptyAt = timePointer(testCreatedAt.Add(time.Minute))
+			},
+			wantErr: ErrInvalidRoom,
+		},
+		{
 			name: "finished room without finish time",
 			mutate: func(params *RestoreRoomParams) {
 				params.Status = StatusFinished
@@ -253,6 +277,30 @@ func TestRestore(t *testing.T) {
 			}
 
 			assertRestoredRoom(t, got, params)
+		})
+	}
+}
+
+func TestEmptyDeadline(t *testing.T) {
+	tests := []struct {
+		name       string
+		prepare    func(*testing.T) *Room
+		wantActive bool
+	}{
+		{name: "new room", prepare: newTestRoom},
+		{name: "active with participants", prepare: activeTestRoom},
+		{name: "active but empty", prepare: idleTestRoom, wantActive: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := test.prepare(t).EmptyDeadline()
+			if ok != test.wantActive {
+				t.Fatalf("EmptyDeadline() active = %t, want %t", ok, test.wantActive)
+			}
+
+			if ok && !got.Equal(testCreatedAt.Add(2*time.Minute+EmptyRoomLifetime)) {
+				t.Errorf("EmptyDeadline() = %v, want ten minutes after the final departure", got)
+			}
 		})
 	}
 }

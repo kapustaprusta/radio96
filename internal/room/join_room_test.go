@@ -73,6 +73,44 @@ func TestJoinRoomExecute(t *testing.T) {
 			wantTokenRequest:  true,
 		},
 		{
+			name:        "recovers a live conversation after the original link deadline",
+			inviteCode:  validInviteCode,
+			displayName: "Alice",
+			prepareRoom: newTestRoom,
+			now:         testCreatedAt.Add(2 * OpenRoomLifetime),
+			state: &MediaRoomState{
+				Exists: true, ParticipantCount: 2, MaxParticipants: MaxParticipants,
+			},
+			identity: "participant-id", wantStatus: StatusActive, wantFindCalls: 1,
+			wantUpdateCalls: 1, wantStateCalls: 2, wantIdentityCalls: 1, wantTokenCalls: 1,
+		},
+		{
+			name:       "recovers an expired room when LiveKit proves the conversation started",
+			inviteCode: validInviteCode, displayName: "Alice",
+			prepareRoom: func(t *testing.T) *Room {
+				prepared := newTestRoom(t)
+				if err := prepared.Expire(prepared.ExpiresAt()); err != nil {
+					t.Fatalf("Expire() error = %v", err)
+				}
+
+				return prepared
+			},
+			now:      testCreatedAt.Add(OpenRoomLifetime + time.Minute),
+			state:    &MediaRoomState{Exists: true, ParticipantCount: 1, MaxParticipants: MaxParticipants},
+			identity: "participant-id", wantStatus: StatusActive, wantFindCalls: 1,
+			wantUpdateCalls: 1, wantStateCalls: 2, wantIdentityCalls: 1, wantTokenCalls: 1,
+		},
+		{
+			name:        "rejoins an empty active media room during grace",
+			inviteCode:  validInviteCode,
+			displayName: "Alice",
+			prepareRoom: activeTestRoom,
+			now:         testCreatedAt.Add(2 * time.Minute),
+			state:       &MediaRoomState{Exists: true, MaxParticipants: MaxParticipants},
+			identity:    "participant-id", wantStatus: StatusActive, wantFindCalls: 1,
+			wantStateCalls: 1, wantIdentityCalls: 1, wantTokenCalls: 1,
+		},
+		{
 			name:        "rejects invalid invite code",
 			inviteCode:  "invalid",
 			displayName: "Alice",
@@ -109,6 +147,7 @@ func TestJoinRoomExecute(t *testing.T) {
 			wantStatus:      StatusExpired,
 			wantFindCalls:   1,
 			wantUpdateCalls: 1,
+			wantStateCalls:  1,
 		},
 		{
 			name:            "persisting expired room fails",
@@ -121,6 +160,7 @@ func TestJoinRoomExecute(t *testing.T) {
 			wantStatus:      StatusExpired,
 			wantFindCalls:   1,
 			wantUpdateCalls: 1,
+			wantStateCalls:  1,
 		},
 		{
 			name:          "rejects finished room",
@@ -157,11 +197,24 @@ func TestJoinRoomExecute(t *testing.T) {
 			wantStateCalls: 1,
 		},
 		{
-			name:            "finishes room missing from media service",
+			name:              "recreates media room during grace",
+			inviteCode:        validInviteCode,
+			displayName:       "Alice",
+			prepareRoom:       activeTestRoom,
+			now:               testCreatedAt.Add(2 * time.Minute),
+			state:             &MediaRoomState{},
+			identity:          "participant-id",
+			wantStatus:        StatusActive,
+			wantFindCalls:     1,
+			wantStateCalls:    1,
+			wantIdentityCalls: 1, wantTokenCalls: 1,
+		},
+		{
+			name:            "idle grace has elapsed",
 			inviteCode:      validInviteCode,
 			displayName:     "Alice",
-			prepareRoom:     activeTestRoom,
-			now:             testCreatedAt.Add(2 * time.Minute),
+			prepareRoom:     idleTestRoom,
+			now:             testCreatedAt.Add(2*time.Minute + EmptyRoomLifetime),
 			state:           &MediaRoomState{},
 			wantErr:         ErrRoomFinished,
 			wantStatus:      StatusFinished,
@@ -170,18 +223,18 @@ func TestJoinRoomExecute(t *testing.T) {
 			wantStateCalls:  1,
 		},
 		{
-			name:            "persisting finished room fails",
-			inviteCode:      validInviteCode,
-			displayName:     "Alice",
-			prepareRoom:     activeTestRoom,
-			now:             testCreatedAt.Add(2 * time.Minute),
-			state:           &MediaRoomState{},
-			updateErr:       repositoryErr,
-			wantErr:         repositoryErr,
-			wantStatus:      StatusFinished,
-			wantFindCalls:   1,
-			wantUpdateCalls: 1,
-			wantStateCalls:  1,
+			name:       "live participant preserves room despite stale empty timestamp",
+			inviteCode: validInviteCode, displayName: "Alice", prepareRoom: idleTestRoom,
+			now:      testCreatedAt.Add(2*time.Minute + EmptyRoomLifetime),
+			state:    &MediaRoomState{Exists: true, ParticipantCount: 1, MaxParticipants: MaxParticipants},
+			identity: "participant-id", wantStatus: StatusActive, wantFindCalls: 1,
+			wantStateCalls: 1, wantIdentityCalls: 1, wantTokenCalls: 1,
+		},
+		{
+			name: "persisting idle finish fails", inviteCode: validInviteCode, displayName: "Alice",
+			prepareRoom: idleTestRoom, now: testCreatedAt.Add(2*time.Minute + EmptyRoomLifetime),
+			state: &MediaRoomState{}, updateErr: repositoryErr, wantErr: repositoryErr,
+			wantStatus: StatusFinished, wantFindCalls: 1, wantUpdateCalls: 1, wantStateCalls: 1,
 		},
 		{
 			name:        "rejects full media room",
@@ -278,6 +331,7 @@ func TestJoinRoomExecute(t *testing.T) {
 			useCase := NewJoinRoom(
 				repository,
 				mediaGateway,
+				&fakeAdmissionStore{},
 				&fakeClock{now: test.now},
 				identityGenerator,
 			)
@@ -301,6 +355,57 @@ func TestJoinRoomExecute(t *testing.T) {
 
 			assertJoinRoomCalls(t, test, repository, mediaGateway, identityGenerator)
 		})
+	}
+}
+
+func TestJoinRoomTokenExpiresWithUnusedInvite(t *testing.T) {
+	createdRoom := newTestRoom(t)
+	media := &fakeMediaGateway{
+		state: &MediaRoomState{},
+		token: &ParticipantToken{ServerURL: "wss://example.livekit.cloud", Value: "signed-token"},
+	}
+	now := createdRoom.ExpiresAt().Add(-5 * time.Second)
+	useCase := NewJoinRoom(&fakeRoomRepository{foundRoom: createdRoom}, media, &fakeAdmissionStore{}, &fakeClock{now: now},
+		&fakeIDGenerator{value: "participant-id"})
+	if _, err := useCase.Execute(t.Context(), createdRoom.InviteCode().Value(), "Alice"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	if media.tokenRequest.TTL != 5*time.Second {
+		t.Errorf("token TTL = %s, want 5s", media.tokenRequest.TTL)
+	}
+}
+
+func TestJoinRoomTokenExpiresWithEmptyRoomGrace(t *testing.T) {
+	createdRoom := idleTestRoom(t)
+	media := &fakeMediaGateway{
+		state: &MediaRoomState{},
+		token: &ParticipantToken{ServerURL: "wss://example.livekit.cloud", Value: "signed-token"},
+	}
+	now := testCreatedAt.Add(2*time.Minute + EmptyRoomLifetime - time.Minute)
+	useCase := NewJoinRoom(&fakeRoomRepository{foundRoom: createdRoom}, media, &fakeAdmissionStore{},
+		&fakeClock{now: now}, &fakeIDGenerator{value: "participant-id"})
+	if _, err := useCase.Execute(t.Context(), createdRoom.InviteCode().Value(), "Alice"); err != nil {
+		t.Fatalf("Execute() error = %v", err)
+	}
+
+	if media.tokenRequest.TTL != time.Minute {
+		t.Errorf("token TTL = %s, want remaining one minute", media.tokenRequest.TTL)
+	}
+}
+
+func TestJoinRoomRejectsAdmissionAfterTokenSigning(t *testing.T) {
+	createdRoom := newTestRoom(t)
+	media := &fakeMediaGateway{
+		state: &MediaRoomState{Exists: true, MaxParticipants: MaxParticipants},
+		token: &ParticipantToken{ServerURL: "wss://example.livekit.cloud", Value: "signed-token"},
+	}
+	useCase := NewJoinRoom(&fakeRoomRepository{foundRoom: createdRoom}, media,
+		&fakeAdmissionStore{err: ErrRoomFull}, &fakeClock{now: testCreatedAt.Add(time.Minute)},
+		&fakeIDGenerator{value: "participant-id"})
+	result, err := useCase.Execute(t.Context(), createdRoom.InviteCode().Value(), "Alice")
+	if result != nil || !errors.Is(err, ErrRoomFull) {
+		t.Errorf("Execute() = (%v, %v), want no token and room full", result, err)
 	}
 }
 
@@ -422,6 +527,14 @@ func activeTestRoom(t *testing.T) *Room {
 		t.Fatalf("Start() error = %v", err)
 	}
 
+	return preparedRoom
+}
+
+func idleTestRoom(t *testing.T) *Room {
+	t.Helper()
+	preparedRoom := activeTestRoom(t)
+	emptyAt := testCreatedAt.Add(2 * time.Minute)
+	preparedRoom.lastEmptyAt = &emptyAt
 	return preparedRoom
 }
 

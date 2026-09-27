@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -29,15 +30,21 @@ func TestRoomRepository(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	t.Cleanup(cancel)
 
-	container, err := tcpostgres.Run(
-		ctx,
-		"postgres:17-alpine",
+	options := []testcontainers.ContainerCustomizer{
 		tcpostgres.WithDatabase(testDatabaseName),
 		tcpostgres.WithUsername(testDatabaseUser),
 		tcpostgres.WithPassword(testDatabasePass),
-		tcpostgres.WithInitScripts(filepath.Join("..", "..", "db", "migrations", "000001_create_rooms.up.sql")),
+		tcpostgres.WithInitScripts(
+			filepath.Join("..", "..", "db", "migrations", "000001_create_rooms.up.sql"),
+			filepath.Join("..", "..", "db", "migrations", "000002_room_lifecycle.up.sql"),
+		),
 		tcpostgres.BasicWaitStrategies(),
-	)
+	}
+	if os.Getenv("RADIO96_TEST_PODMAN") == "1" {
+		options = append(options, testcontainers.WithProvider(testcontainers.ProviderPodman))
+	}
+
+	container, err := tcpostgres.Run(ctx, "postgres:17-alpine", options...)
 	testcontainers.CleanupContainer(t, container)
 	if err != nil {
 		t.Fatalf("start PostgreSQL container: %v", err)
@@ -206,6 +213,42 @@ func TestRoomRepository(t *testing.T) {
 			t.Fatalf("Update(stale room) error = %v, want %v", err, room.ErrConcurrentRoomUpdate)
 		}
 	})
+
+	t.Run("rejects stale idle finish after rejoin", func(t *testing.T) {
+		truncateRooms(t, ctx, pool)
+		inviteCode := testInviteCode(t, 21)
+		createdRoom := testRoom(t, "room-idle-race", "room-idle-race", inviteCode)
+		if err := repository.Create(ctx, createdRoom); err != nil {
+			t.Fatalf("Create() error = %v", err)
+		}
+
+		startedAt := testRoomCreatedAt.Add(time.Minute)
+		if err := NewLifecycleRepository(pool).Start(ctx, createdRoom.Name(), startedAt); err != nil {
+			t.Fatalf("Start() error = %v", err)
+		}
+
+		emptyAt := startedAt.Add(time.Minute)
+		if err := NewLifecycleRepository(pool).Idle(ctx, createdRoom.Name(), emptyAt); err != nil {
+			t.Fatalf("Idle() error = %v", err)
+		}
+
+		stale, err := repository.FindByInviteCode(ctx, inviteCode)
+		if err != nil {
+			t.Fatalf("load idle room: %v", err)
+		}
+
+		if err := NewLifecycleRepository(pool).Start(ctx, createdRoom.Name(), emptyAt.Add(time.Second)); err != nil {
+			t.Fatalf("resume room: %v", err)
+		}
+
+		if err := stale.Finish(emptyAt.Add(room.EmptyRoomLifetime)); err != nil {
+			t.Fatalf("Finish() error = %v", err)
+		}
+
+		if err := repository.Update(ctx, stale); !errors.Is(err, room.ErrConcurrentRoomUpdate) {
+			t.Errorf("Update(stale idle room) error = %v, want concurrent update", err)
+		}
+	})
 }
 
 func testInviteCode(t *testing.T, fill byte) *room.InviteCode {
@@ -233,7 +276,7 @@ func testRoom(t *testing.T, id, name string, inviteCode *room.InviteCode) *room.
 func truncateRooms(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	t.Helper()
 
-	if _, err := pool.Exec(ctx, "TRUNCATE TABLE rooms"); err != nil {
+	if _, err := pool.Exec(ctx, "TRUNCATE TABLE room_admissions, rooms"); err != nil {
 		t.Fatalf("truncate rooms: %v", err)
 	}
 }

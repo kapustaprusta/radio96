@@ -7,26 +7,25 @@ interface RoomErrorProps {
 }
 
 const errorCopy = {
-  room_not_found: { title: "Комната не найдена", text: "Проверь ссылку или перейди на главную.", icon: SearchIcon },
-  room_expired: { title: "Ссылка больше не действует", text: "В эту комнату никто не вошёл вовремя.", icon: ClockIcon },
+  room_not_found: { title: "Комната не найдена", text: "Проверь ссылку или попроси отправить её ещё раз.", icon: SearchIcon },
+  room_expired: { title: "Ссылка больше не действует", text: "Попроси новую ссылку или создай комнату.", icon: ClockIcon },
   room_finished: {
-    title: "Разговор завершён", text: "Комнату нельзя открыть повторно.", icon: PhoneOffIcon,
+    title: "Разговор завершён", text: "Создай новую комнату, чтобы продолжить общение.", icon: PhoneOffIcon,
   },
-  room_closed: { title: "Разговор завершён", text: "Комнату нельзя открыть повторно.", icon: PhoneOffIcon },
-  room_full: { title: "Комната уже заполнена", text: "Попробуй подключиться немного позже.", icon: UsersIcon },
+  room_full: { title: "В комнате нет мест", text: "Попробуй войти чуть позже.", icon: UsersIcon },
   media_unavailable: {
     title: "Голосовой сервис временно недоступен", text: "Попробуй подключиться немного позже.", icon: UnplugIcon,
   },
   internal_error: { title: "Что-то пошло не так", text: "Попробуй ещё раз чуть позже.", icon: UnplugIcon },
-  connection_failed: { title: "Не удалось подключиться", text: "Проверь интернет и попробуй ещё раз.", icon: UnplugIcon },
-  disconnected: { title: "Связь прервалась", text: "Проверь интернет и попробуй подключиться снова.", icon: UnplugIcon },
+  connection_failed: { title: "Не удалось подключиться", text: "Проверь подключение к интернету и попробуй снова.", icon: UnplugIcon },
+  disconnected: { title: "Связь прервалась", text: "Проверь подключение к интернету и попробуй снова.", icon: UnplugIcon },
 };
 
 export function RoomError({ code, onRetry, navigate }: RoomErrorProps) {
   const copy = errorCopy[code as keyof typeof errorCopy] ?? {
     title: "Не удалось связаться с radio96", text: "Проверь интернет и попробуй ещё раз.", icon: UnplugIcon,
   };
-  const terminal = ["room_not_found", "room_expired", "room_finished", "room_closed"].includes(code);
+  const terminal = ["room_not_found", "room_expired", "room_finished"].includes(code);
   const Icon = copy.icon;
 
   return (

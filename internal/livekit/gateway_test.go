@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -339,6 +340,38 @@ func TestGatewayIssueParticipantTokenValidation(t *testing.T) {
 	}
 }
 
+func TestGatewayParticipantIdentities(t *testing.T) {
+	tests := []struct {
+		name       string
+		roomName   string
+		response   *livekitproto.ListParticipantsResponse
+		serviceErr error
+		want       []string
+		wantError  bool
+	}{
+		{name: "empty room name", wantError: true},
+		{name: "empty response", roomName: "room-id", wantError: true},
+		{name: "service failure", roomName: "room-id", serviceErr: errors.New("unavailable"), wantError: true},
+		{name: "empty room", roomName: "room-id", response: &livekitproto.ListParticipantsResponse{}},
+		{name: "participants", roomName: "room-id", response: &livekitproto.ListParticipantsResponse{
+			Participants: []*livekitproto.ParticipantInfo{{Identity: "alice"}, nil, {Identity: "bob"}},
+		}, want: []string{"alice", "bob"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			gateway := &Gateway{roomClient: &fakeRoomService{participants: test.response, err: test.serviceErr}}
+			got, err := gateway.ParticipantIdentities(t.Context(), test.roomName)
+			if (err != nil) != test.wantError {
+				t.Fatalf("ParticipantIdentities() error = %v, wantError=%t", err, test.wantError)
+			}
+
+			if !slices.Equal(got, test.want) {
+				t.Errorf("ParticipantIdentities() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func TestGatewayIssueParticipantToken(t *testing.T) {
 	const (
 		serverURL = "wss://radio96.example.livekit.cloud"
@@ -455,8 +488,14 @@ func TestGatewayIssueParticipantToken(t *testing.T) {
 		t.Errorf("room max participants = %v, want %d", grants.RoomConfig, request.MaxParticipants)
 	}
 
-	if len(client.createRequests) != 1 || client.createRequests[0].MaxParticipants != room.MaxParticipants {
-		t.Errorf("CreateRoom requests = %v, want one request with max participants %d", client.createRequests, room.MaxParticipants)
+	if grants.RoomConfig == nil || grants.RoomConfig.DepartureTimeout != departureTimeoutSeconds {
+		t.Errorf("room departure timeout = %v, want %d", grants.RoomConfig, departureTimeoutSeconds)
+	}
+
+	if len(client.createRequests) != 1 || client.createRequests[0].MaxParticipants != room.MaxParticipants ||
+		client.createRequests[0].DepartureTimeout != departureTimeoutSeconds {
+		t.Errorf("CreateRoom requests = %v, want max participants %d and departure timeout %d",
+			client.createRequests, room.MaxParticipants, departureTimeoutSeconds)
 	}
 }
 
@@ -494,10 +533,18 @@ func TestGatewayIssueParticipantTokenCapacity(t *testing.T) {
 
 type fakeRoomService struct {
 	response       *livekitproto.ListRoomsResponse
+	participants   *livekitproto.ListParticipantsResponse
 	created        *livekitproto.Room
 	err            error
 	requests       []*livekitproto.ListRoomsRequest
 	createRequests []*livekitproto.CreateRoomRequest
+}
+
+func (service *fakeRoomService) ListParticipants(
+	_ context.Context,
+	_ *livekitproto.ListParticipantsRequest,
+) (*livekitproto.ListParticipantsResponse, error) {
+	return service.participants, service.err
 }
 
 func (service *fakeRoomService) CreateRoom(

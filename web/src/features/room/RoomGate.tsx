@@ -12,7 +12,7 @@ interface RoomGateProps {
   onParticipantCountChange?: (count: number | null) => void;
 }
 
-type GateState = { kind: "loading" } | { kind: "ready" } | { kind: "error"; code: string };
+type GateState = { kind: "loading" } | { kind: "ready"; status: "open" | "active" } | { kind: "error"; code: string };
 
 export function RoomGate({ inviteCode, navigate, createdRoomExpiry, onParticipantCountChange }: RoomGateProps) {
   const [state, setState] = useState<GateState>({ kind: "loading" });
@@ -29,7 +29,7 @@ export function RoomGate({ inviteCode, navigate, createdRoomExpiry, onParticipan
       .then((room) => {
         if (controller.signal.aborted) return;
         setState(room.status === "open" || room.status === "active"
-          ? { kind: "ready" } : { kind: "error", code: `room_${room.status}` });
+          ? { kind: "ready", status: room.status } : { kind: "error", code: `room_${room.status}` });
       })
       .catch((error: unknown) => {
         if (!controller.signal.aborted) {
@@ -46,7 +46,8 @@ export function RoomGate({ inviteCode, navigate, createdRoomExpiry, onParticipan
 
   if (state.kind === "loading") return <ConnectionProgress checkingRoom />;
   if (state.kind === "ready") return <RoomSession inviteCode={inviteCode} navigate={navigate}
-    createdRoomExpiry={createdRoomExpiry} onParticipantCountChange={onParticipantCountChange} />;
+    createdRoomExpiry={state.status === "open" ? createdRoomExpiry : null}
+    onParticipantCountChange={onParticipantCountChange} />;
 
   return (
     <RoomError

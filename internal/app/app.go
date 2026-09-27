@@ -13,7 +13,9 @@ import (
 
 	"github.com/kapustaprusta/radio96/internal/config"
 	"github.com/kapustaprusta/radio96/internal/httpapi"
+	"github.com/kapustaprusta/radio96/internal/livekit"
 	"github.com/kapustaprusta/radio96/internal/postgres"
+	"github.com/kapustaprusta/radio96/internal/reconcile"
 	"github.com/kapustaprusta/radio96/internal/room"
 )
 
@@ -29,6 +31,7 @@ type App struct {
 	server          *http.Server
 	shutdownTimeout time.Duration
 	database        *pgxpool.Pool
+	worker          *reconcile.Worker
 }
 
 func New(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*App, error) {
@@ -55,19 +58,34 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*App, er
 	}
 
 	repository := postgres.NewRoomRepository(database)
+	admissions := postgres.NewAdmissionRepository(database)
+	lifecycleStore := postgres.NewLifecycleRepository(database)
 	clock := systemClock{}
 	identities := randomIDGenerator{}
-	handler := httpapi.NewHandler(&httpapi.Dependencies{
+	getRoom := room.NewGetRoom(repository, clock)
+	if cfg.LiveKitURL != "" {
+		getRoom = room.NewGetRoomWithMedia(repository, gateway, clock)
+	}
+
+	dependencies := &httpapi.Dependencies{
 		CreateRoom: room.NewCreateRoom(repository, clock, identities, randomInviteCodeGenerator{}),
-		GetRoom:    room.NewGetRoom(repository, clock),
-		JoinRoom:   room.NewJoinRoom(repository, gateway, clock, identities),
+		GetRoom:    getRoom,
+		JoinRoom:   room.NewJoinRoom(repository, gateway, admissions, clock, identities),
 		Ready: func(requestCtx context.Context) error {
 			checkCtx, cancel := context.WithTimeout(requestCtx, cfg.DatabaseConnectTimeout)
 			defer cancel()
 
 			return database.Ping(checkCtx)
 		},
-	})
+	}
+	var worker *reconcile.Worker
+	if cfg.LiveKitURL != "" {
+		dependencies.WebhookVerifier = livekit.NewWebhookVerifier(cfg.LiveKitAPIKey, cfg.LiveKitAPISecret)
+		dependencies.HandleLifecycleEvent = room.NewHandleLifecycleEvent(lifecycleStore, gateway)
+		worker = reconcile.NewWorker(room.NewReconcileRooms(lifecycleStore, gateway, clock), logger)
+	}
+
+	handler := httpapi.NewHandler(dependencies)
 
 	return &App{
 		logger: logger,
@@ -81,6 +99,7 @@ func New(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*App, er
 		},
 		shutdownTimeout: cfg.ShutdownTimeout,
 		database:        database,
+		worker:          worker,
 	}, nil
 }
 
@@ -106,6 +125,21 @@ func (a *App) Run(ctx context.Context) error {
 	}()
 
 	serverError := make(chan error, 1)
+	workerCtx, cancelWorker := context.WithCancel(ctx)
+	workerDone := make(chan struct{})
+	if a.worker != nil {
+		go func() {
+			defer close(workerDone)
+			a.worker.Run(workerCtx)
+		}()
+	} else {
+		close(workerDone)
+	}
+
+	defer func() {
+		cancelWorker()
+		<-workerDone
+	}()
 
 	go func() {
 		a.logger.Info("HTTP server started", slog.String("address", listener.Addr().String()))
