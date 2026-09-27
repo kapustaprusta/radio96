@@ -2,7 +2,9 @@ version: "2"
 
 sql:
   - engine: postgresql
-    schema: db/migrations/000001_create_rooms.up.sql
+    schema:
+      - db/migrations/000001_create_rooms.up.sql
+      - db/migrations/000002_room_lifecycle.up.sql
     queries: db/queries
     gen:
       go:

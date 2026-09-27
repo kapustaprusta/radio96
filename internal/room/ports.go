@@ -45,7 +45,15 @@ type ParticipantToken struct {
 	Value     string
 }
 
+// AdmissionStore counts unexpired tokens that are not currently in LiveKit.
+// Reserve must serialize requests for the same room across application instances.
+type AdmissionStore interface {
+	Reserve(ctx context.Context, roomName, identity string, connectedIdentities []string,
+		expiresAt time.Time, maxParticipants int) error
+}
+
 type MediaGateway interface {
 	RoomState(ctx context.Context, roomName string) (*MediaRoomState, error)
+	ParticipantIdentities(ctx context.Context, roomName string) ([]string, error)
 	IssueParticipantToken(ctx context.Context, request ParticipantTokenRequest) (*ParticipantToken, error)
 }

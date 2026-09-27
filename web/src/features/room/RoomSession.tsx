@@ -126,7 +126,7 @@ export function RoomSession({ inviteCode, navigate, createdRoomExpiry, onPartici
         const snapshot = current.session.getSnapshot();
         if (snapshot.connection === "disconnected") {
           dispose();
-          setView({ kind: "error", code: snapshot.disconnectReason === "finished" ? "room_closed" : "disconnected" });
+          setView({ kind: "error", code: "disconnected" });
         } else {
           if (snapshot.connection === "connected" && current.reconnecting) current.restoredAt = Date.now();
           current.reconnecting = snapshot.connection === "reconnecting";
@@ -180,7 +180,10 @@ export function RoomSession({ inviteCode, navigate, createdRoomExpiry, onPartici
         session={view.session}
         preferences={preferences}
         onPreferencesChange={setPreferences}
-        onLeave={() => { dispose(); setView({ kind: "left" }); }}
+        onLeave={() => {
+          dispose();
+          setView({ kind: "left" });
+        }}
       />
     );
   }

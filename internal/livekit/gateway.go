@@ -21,7 +21,10 @@ type roomService interface {
 		ctx context.Context,
 		request *livekitproto.ListRoomsRequest,
 	) (*livekitproto.ListRoomsResponse, error)
+	ListParticipants(ctx context.Context, request *livekitproto.ListParticipantsRequest) (*livekitproto.ListParticipantsResponse, error)
 }
+
+const departureTimeoutSeconds = 1
 
 type Gateway struct {
 	serverURL  string
@@ -89,6 +92,30 @@ func (gateway *Gateway) RoomState(ctx context.Context, roomName string) (*room.M
 	return &room.MediaRoomState{}, nil
 }
 
+func (gateway *Gateway) ParticipantIdentities(ctx context.Context, roomName string) ([]string, error) {
+	if strings.TrimSpace(roomName) == "" {
+		return nil, errors.New("list LiveKit participants: room name is required")
+	}
+
+	response, err := gateway.roomClient.ListParticipants(ctx, &livekitproto.ListParticipantsRequest{Room: roomName})
+	if err != nil {
+		return nil, fmt.Errorf("list LiveKit participants: %w", err)
+	}
+
+	if response == nil {
+		return nil, errors.New("list LiveKit participants: empty response")
+	}
+
+	identities := make([]string, 0, len(response.Participants))
+	for _, participant := range response.Participants {
+		if participant != nil && participant.Identity != "" {
+			identities = append(identities, participant.Identity)
+		}
+	}
+
+	return identities, nil
+}
+
 func (gateway *Gateway) IssueParticipantToken(
 	ctx context.Context,
 	request room.ParticipantTokenRequest,
@@ -121,6 +148,7 @@ func (gateway *Gateway) IssueParticipantToken(
 	// the actual LiveKit room has the limit before issuing any join credentials.
 	mediaRoom, err := gateway.roomClient.CreateRoom(ctx, &livekitproto.CreateRoomRequest{
 		Name: request.RoomName, MaxParticipants: uint32(request.MaxParticipants),
+		DepartureTimeout: departureTimeoutSeconds,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create LiveKit room: %w", err)
@@ -150,7 +178,8 @@ func (gateway *Gateway) IssueParticipantToken(
 		SetName(request.DisplayName).
 		SetValidFor(request.TTL).
 		SetRoomConfig(&livekitproto.RoomConfiguration{
-			MaxParticipants: uint32(request.MaxParticipants),
+			MaxParticipants:  uint32(request.MaxParticipants),
+			DepartureTimeout: departureTimeoutSeconds,
 		}).
 		ToJWT()
 	if err != nil {

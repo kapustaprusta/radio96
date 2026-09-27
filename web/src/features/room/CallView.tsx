@@ -27,9 +27,11 @@ export function CallView({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [microphoneBusy, setMicrophoneBusy] = useState(false);
   const [microphoneError, setMicrophoneError] = useState("");
+  const [microphoneNotice, setMicrophoneNotice] = useState("");
   const [audioError, setAudioError] = useState(false);
   const settingsButton = useRef<HTMLButtonElement>(null);
   const changingMicrophone = useRef(false);
+  const microphoneNoticeTimer = useRef<number | undefined>(undefined);
   const publishPreparedMicrophone = useRef(preferences.microphoneEnabled);
   const active = useRef(true);
   const { copyState, share, nativeShare, dismiss } = useInviteLink();
@@ -41,17 +43,25 @@ export function CallView({
     return () => {
       active.current = false;
       window.clearInterval(timer);
+      window.clearTimeout(microphoneNoticeTimer.current);
     };
   }, []);
 
-  const setMicrophoneEnabled = useCallback(async (enabled: boolean) => {
+  const setMicrophoneEnabled = useCallback(async (enabled: boolean, announce = true) => {
     if (changingMicrophone.current) return;
     changingMicrophone.current = true;
     setMicrophoneBusy(true);
     setMicrophoneError("");
     try {
       await session.setMicrophoneEnabled(enabled, preferences.input.deviceId);
-      if (active.current) onPreferencesChange((current) => ({ ...current, microphoneEnabled: enabled }));
+      if (active.current) {
+        onPreferencesChange((current) => ({ ...current, microphoneEnabled: enabled }));
+        if (announce) {
+          setMicrophoneNotice(enabled ? "Микрофон включён" : "Микрофон выключен");
+          window.clearTimeout(microphoneNoticeTimer.current);
+          microphoneNoticeTimer.current = window.setTimeout(() => setMicrophoneNotice(""), 2000);
+        }
+      }
     } catch (error: unknown) {
       if (active.current) {
         const code = error instanceof MediaError ? error.code : "microphone_unavailable";
@@ -66,7 +76,7 @@ export function CallView({
   useEffect(() => {
     if (!publishPreparedMicrophone.current) return;
     publishPreparedMicrophone.current = false;
-    void setMicrophoneEnabled(true);
+    void setMicrophoneEnabled(true, false);
   }, [setMicrophoneEnabled]);
 
   const closeSettings = useCallback(() => {
@@ -134,6 +144,9 @@ export function CallView({
       </div>
       <div className="call-feedback">
         {microphoneError && <p className="field-error" role="alert">{microphoneError}</p>}
+        <div className="toast microphone-toast" data-visible={Boolean(microphoneNotice)} role="status" aria-live="polite">
+          {microphoneNotice}
+        </div>
         <InviteLinkFeedback copyState={copyState} onDismiss={dismiss} />
       </div>
       <div className="call-controls" aria-label="Управление разговором">
@@ -153,7 +166,7 @@ export function CallView({
         </IconButton>
         <IconButton
           ref={settingsButton}
-          aria-label="Настроить звук"
+          aria-label="Настройки звука"
           tooltip="Настройки звука"
           onClick={() => setSettingsOpen(true)}
         ><SettingsIcon /></IconButton>

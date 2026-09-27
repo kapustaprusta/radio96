@@ -43,7 +43,8 @@ describe("audio test controls", () => {
     const close = vi.fn().mockResolvedValue(undefined);
     getUserMedia.mockResolvedValue({ getTracks: () => [{ stop }] });
     vi.stubGlobal("AudioContext", class {
-      createAnalyser = () => ({ fftSize: 256, getByteTimeDomainData: (data: Uint8Array) => data.fill(128) });
+      createAnalyser = () => ({ fftSize: 2048, frequencyBinCount: 1024, context: { sampleRate: 48000 },
+        getByteFrequencyData: (data: Uint8Array) => data.fill(128) });
       createMediaStreamSource = () => ({ connect: vi.fn() });
       resume = vi.fn().mockResolvedValue(undefined);
       close = close;
@@ -92,6 +93,17 @@ function renderSettings(microphoneGranted = false) {
 }
 
 describe("audio settings", () => {
+  it("keeps the microphone spectrum panel visible with an error after a failed manual check", async () => {
+    getUserMedia.mockRejectedValue(new DOMException("private details", "NotFoundError"));
+    renderSettings(true);
+    await userEvent.setup().click(screen.getByRole("button", { name: "Проверить" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось включить микрофон");
+    expect(screen.getByText("Микрофон не найден. Подключи устройство.")).toBeInTheDocument();
+    expect(screen.getByRole("meter", { name: "Уровень микрофона" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Проверить" })).toBeEnabled();
+    expect(screen.queryByText("private details")).not.toBeInTheDocument();
+  });
+
   it.each([
     { granted: false, label: "Нет доступа к микрофону" },
     { granted: true, label: "Микрофон по умолчанию" },
@@ -122,7 +134,7 @@ describe("audio settings", () => {
     expect(screen.queryByRole("button", { name: "Проверить" })).not.toBeInTheDocument();
     enumerateDevices.mockResolvedValue(devices);
     await user.click(screen.getByRole("button", { name: "Разрешить доступ" }));
-    expect(await screen.findByText("Доступ разрешён")).toBeInTheDocument();
+    expect(await screen.findByText("Доступ к микрофону разрешён")).toBeInTheDocument();
     expect(select).toBeEnabled();
     expect(select).toHaveTextContent("Микрофон по умолчанию");
     expect(screen.queryByText("Нет доступа к микрофону")).not.toBeInTheDocument();
@@ -173,7 +185,8 @@ describe("audio settings", () => {
     const close = vi.fn().mockResolvedValue(undefined);
     getUserMedia.mockResolvedValue({ getTracks: () => [{ stop }] });
     vi.stubGlobal("AudioContext", class {
-      createAnalyser = () => ({ fftSize: 256, getByteTimeDomainData: (data: Uint8Array) => data.fill(150) });
+      createAnalyser = () => ({ fftSize: 2048, frequencyBinCount: 1024, context: { sampleRate: 48000 },
+        getByteFrequencyData: (data: Uint8Array) => data.fill(150) });
       createMediaStreamSource = () => ({ connect: vi.fn() });
       resume = vi.fn().mockResolvedValue(undefined);
       close = close;

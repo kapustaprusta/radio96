@@ -27,6 +27,7 @@ SELECT
     created_at,
     expires_at,
     started_at,
+    last_empty_at,
     finished_at
 FROM rooms
 WHERE invite_code_hash = sqlc.arg(invite_code_hash)
@@ -36,11 +37,13 @@ LIMIT 1;
 UPDATE rooms
 SET
     status = sqlc.arg(status),
-    started_at = sqlc.narg(started_at),
-    finished_at = sqlc.narg(finished_at)
+    started_at = COALESCE(started_at, sqlc.narg(started_at)),
+    finished_at = COALESCE(finished_at, sqlc.narg(finished_at))
 WHERE id = sqlc.arg(id)
+  AND last_empty_at IS NOT DISTINCT FROM sqlc.narg(expected_last_empty_at)::timestamptz
   AND (
       status = sqlc.arg(status)
       OR (status = 'open' AND sqlc.arg(status)::TEXT IN ('active', 'expired'))
+      OR (status = 'expired' AND sqlc.arg(status)::TEXT = 'active')
       OR (status = 'active' AND sqlc.arg(status)::TEXT = 'finished')
   );

@@ -166,8 +166,8 @@ func TestRouteErrors(t *testing.T) {
 			wantStatus: http.StatusNotFound, wantCode: "not_found",
 		},
 		{
-			name: "unimplemented webhook", method: http.MethodPost, path: "/api/v1/livekit/webhook",
-			wantStatus: http.StatusNotFound, wantCode: "not_found",
+			name: "webhook without LiveKit", method: http.MethodPost, path: "/api/v1/livekit/webhook",
+			wantStatus: http.StatusServiceUnavailable, wantCode: "media_unavailable",
 		},
 	}
 

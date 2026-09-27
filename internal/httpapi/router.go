@@ -20,11 +20,21 @@ type JoinRoomUseCase interface {
 	Execute(ctx context.Context, inviteCode, displayName string) (*room.JoinRoomResult, error)
 }
 
+type LiveKitWebhookVerifier interface {
+	Verify(request *http.Request) (*room.LifecycleEvent, error)
+}
+
+type LifecycleEventUseCase interface {
+	Execute(ctx context.Context, event room.LifecycleEvent) error
+}
+
 type Dependencies struct {
-	CreateRoom CreateRoomUseCase
-	GetRoom    GetRoomUseCase
-	JoinRoom   JoinRoomUseCase
-	Ready      func(context.Context) error
+	CreateRoom           CreateRoomUseCase
+	GetRoom              GetRoomUseCase
+	JoinRoom             JoinRoomUseCase
+	WebhookVerifier      LiveKitWebhookVerifier
+	HandleLifecycleEvent LifecycleEventUseCase
+	Ready                func(context.Context) error
 }
 
 type handler struct {
@@ -52,6 +62,8 @@ func NewHandler(dependencies *Dependencies) http.Handler {
 	router.HandleFunc("/api/v1/rooms/{inviteCode}", methodNotAllowed(http.MethodGet+", "+http.MethodHead))
 	router.HandleFunc("POST /api/v1/rooms/{inviteCode}/join", api.joinRoom)
 	router.HandleFunc("/api/v1/rooms/{inviteCode}/join", methodNotAllowed(http.MethodPost))
+	router.HandleFunc("POST /api/v1/livekit/webhook", api.livekitWebhook)
+	router.HandleFunc("/api/v1/livekit/webhook", methodNotAllowed(http.MethodPost))
 	router.HandleFunc("/", notFound)
 
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {

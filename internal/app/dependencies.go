@@ -87,6 +87,17 @@ func (gateway *boundedMediaGateway) RoomState(ctx context.Context, roomName stri
 	return gateway.provider.RoomState(requestCtx, roomName)
 }
 
+func (gateway *boundedMediaGateway) ParticipantIdentities(ctx context.Context, roomName string) ([]string, error) {
+	if gateway.provider == nil {
+		return nil, room.ErrMediaUnavailable
+	}
+
+	requestCtx, cancel := context.WithTimeout(ctx, gateway.timeout)
+	defer cancel()
+
+	return gateway.provider.ParticipantIdentities(requestCtx, roomName)
+}
+
 func (gateway *boundedMediaGateway) IssueParticipantToken(
 	ctx context.Context,
 	request room.ParticipantTokenRequest,

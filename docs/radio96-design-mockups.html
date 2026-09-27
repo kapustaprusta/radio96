@@ -1676,26 +1676,18 @@ html&gt;body{padding:0}&lt;/style&gt;
     }
 
     #radio96-review-draft .r96d-call-controls .r96d-mic-control {
-      width: 56px;
-      height: 56px;
-      flex-basis: 56px;
-      border-radius: 16px;
-      box-shadow: 0 8px 22px light-dark(rgba(38,40,36,.12), rgba(0,0,0,.26));
+      width: 46px;
+      height: 46px;
+      flex-basis: 46px;
+      border-radius: 12px;
     }
 
     #radio96-review-draft .r96d-mic-control [data-lucide] {
-      width: 21px;
-      height: 21px;
-    }
-
-    #radio96-review-draft .r96d-share-control[data-share-mode=&quot;share&quot;] {
-      width: auto;
-      flex-basis: auto;
-      padding: 0 14px;
+      width: 18px;
+      height: 18px;
     }
 
     #radio96-review-draft .r96d-share-label { display: none; }
-    #radio96-review-draft .r96d-share-control[data-share-mode=&quot;share&quot;] .r96d-share-label { display: inline; }
 
     #radio96-review-draft .r96d-mic-control[aria-checked=&quot;false&quot;] {
       color: #ffffff;
@@ -2129,9 +2121,10 @@ html&gt;body{padding:0}&lt;/style&gt;
         &lt;option value=&quot;room-full&quot;&gt;Комната заполнена&lt;/option&gt;
         &lt;option value=&quot;expired&quot;&gt;Комната · ссылка истекла&lt;/option&gt;
         &lt;option value=&quot;not-found&quot;&gt;Комната · не найдена&lt;/option&gt;
-        &lt;option value=&quot;clipboard&quot;&gt;Буфер обмена недоступен&lt;/option&gt;
+        &lt;option value=&quot;clipboard&quot;&gt;Не удалось скопировать ссылку&lt;/option&gt;
         &lt;option value=&quot;disconnected&quot;&gt;Связь прервалась&lt;/option&gt;
         &lt;option value=&quot;left&quot;&gt;Ты вышел&lt;/option&gt;
+        &lt;option value=&quot;left-last&quot;&gt;Ты вышел · последний участник&lt;/option&gt;
         &lt;option value=&quot;finished&quot;&gt;Комната · завершена&lt;/option&gt;
       &lt;/select&gt;
     &lt;/label&gt;
@@ -2182,7 +2175,7 @@ html&gt;body{padding:0}&lt;/style&gt;
               &lt;/details&gt;
               &lt;button type=&quot;button&quot; class=&quot;r96d-primary r96d-settings-permission&quot; data-r96d-settings-permission data-action=&quot;grant-settings&quot; hidden&gt;Разрешить доступ&lt;/button&gt;
               &lt;div class=&quot;r96d-audio-test&quot; data-r96d-mic-test data-visible=&quot;false&quot; data-state=&quot;idle&quot; aria-live=&quot;polite&quot;&gt;
-                &lt;div class=&quot;r96d-audio-test-head&quot;&gt;&lt;strong data-r96d-mic-test-message&gt;Говорите в микрофон&lt;/strong&gt;&lt;span class=&quot;r96d-test-live&quot; data-r96d-mic-test-status&gt;Слушаем&lt;/span&gt;&lt;/div&gt;
+                &lt;div class=&quot;r96d-audio-test-head&quot;&gt;&lt;strong data-r96d-mic-test-message&gt;Скажи что-нибудь&lt;/strong&gt;&lt;span class=&quot;r96d-test-live&quot; data-r96d-mic-test-status&gt;Проверяем&lt;/span&gt;&lt;/div&gt;
                 &lt;div class=&quot;r96d-test-wave&quot; data-r96d-wave=&quot;mic&quot; role=&quot;img&quot; aria-label=&quot;Уровень входящего звука&quot;&gt;&lt;/div&gt;
               &lt;/div&gt;
             &lt;/section&gt;
@@ -2199,7 +2192,7 @@ html&gt;body{padding:0}&lt;/style&gt;
                 &lt;/div&gt;
               &lt;/details&gt;
               &lt;div class=&quot;r96d-audio-test&quot; data-r96d-speaker-test data-visible=&quot;false&quot; data-state=&quot;idle&quot; aria-live=&quot;polite&quot;&gt;
-                &lt;div class=&quot;r96d-audio-test-head&quot;&gt;&lt;strong data-r96d-speaker-test-message&gt;Воспроизводим тестовый звук&lt;/strong&gt;&lt;span class=&quot;r96d-test-live&quot; data-r96d-speaker-test-status&gt;Играет&lt;/span&gt;&lt;/div&gt;
+                &lt;div class=&quot;r96d-audio-test-head&quot;&gt;&lt;strong data-r96d-speaker-test-message&gt;Играет тестовый звук&lt;/strong&gt;&lt;span class=&quot;r96d-test-live&quot; data-r96d-speaker-test-status&gt;Играет&lt;/span&gt;&lt;/div&gt;
                 &lt;div class=&quot;r96d-test-wave&quot; data-r96d-wave=&quot;speaker&quot; role=&quot;img&quot; aria-label=&quot;Анимация воспроизведения звука&quot;&gt;&lt;/div&gt;
               &lt;/div&gt;
             &lt;/section&gt;
@@ -2355,7 +2348,6 @@ html&gt;body{padding:0}&lt;/style&gt;
             text: &#x27;Присоединяйся к разговору&#x27;,
             url: inviteUrl
           });
-          notify(&#x27;Ссылка отправлена&#x27;);
         } catch (error) {
           if (error &amp;&amp; error.name === &#x27;AbortError&#x27;) return;
           render(&#x27;clipboard&#x27;);
@@ -2374,8 +2366,8 @@ html&gt;body{padding:0}&lt;/style&gt;
         setTestButton(micTestButton, false);
         micTestPanel.setAttribute(&#x27;data-visible&#x27;, String(!hide));
         micTestPanel.setAttribute(&#x27;data-state&#x27;, &#x27;idle&#x27;);
-        micTestMessage.textContent = &#x27;Говорите в микрофон&#x27;;
-        micTestStatus.textContent = &#x27;Слушаем&#x27;;
+        micTestMessage.textContent = &#x27;Скажи что-нибудь&#x27;;
+        micTestStatus.textContent = &#x27;Проверяем&#x27;;
         resetWave(micWaveBars);
       };
 
@@ -2404,7 +2396,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         setTestButton(speakerTestButton, false);
         speakerTestPanel.setAttribute(&#x27;data-visible&#x27;, String(!hide));
         speakerTestPanel.setAttribute(&#x27;data-state&#x27;, &#x27;idle&#x27;);
-        speakerTestMessage.textContent = &#x27;Воспроизводим тестовый звук&#x27;;
+        speakerTestMessage.textContent = &#x27;Играет тестовый звук&#x27;;
         speakerTestStatus.textContent = &#x27;Играет&#x27;;
         resetWave(speakerWaveBars);
       };
@@ -2416,8 +2408,8 @@ html&gt;body{padding:0}&lt;/style&gt;
         const run = micTestRun;
         micTestPanel.setAttribute(&#x27;data-visible&#x27;, &#x27;true&#x27;);
         micTestPanel.setAttribute(&#x27;data-state&#x27;, &#x27;active&#x27;);
-        micTestMessage.textContent = &#x27;Говорите в микрофон&#x27;;
-        micTestStatus.textContent = &#x27;Слушаем&#x27;;
+        micTestMessage.textContent = &#x27;Скажи что-нибудь&#x27;;
+        micTestStatus.textContent = &#x27;Проверяем&#x27;;
         setTestButton(micTestButton, true);
 
         try {
@@ -2452,7 +2444,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           if (run !== micTestRun) return;
           stopMicTest({ hide: false });
           micTestPanel.setAttribute(&#x27;data-state&#x27;, &#x27;error&#x27;);
-          micTestMessage.textContent = &#x27;Не удалось получить доступ&#x27;;
+          micTestMessage.textContent = &#x27;Не удалось включить микрофон&#x27;;
           micTestStatus.textContent = &#x27;Нет доступа&#x27;;
         }
       };
@@ -2464,7 +2456,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         const run = speakerTestRun;
         speakerTestPanel.setAttribute(&#x27;data-visible&#x27;, &#x27;true&#x27;);
         speakerTestPanel.setAttribute(&#x27;data-state&#x27;, &#x27;active&#x27;);
-        speakerTestMessage.textContent = &#x27;Воспроизводим тестовый звук&#x27;;
+        speakerTestMessage.textContent = &#x27;Играет тестовый звук&#x27;;
         speakerTestStatus.textContent = &#x27;Играет&#x27;;
         setTestButton(speakerTestButton, true);
 
@@ -2562,13 +2554,13 @@ html&gt;body{padding:0}&lt;/style&gt;
         return `
           &lt;section class=&quot;r96d-screen r96d-home&quot;&gt;
             &lt;div class=&quot;r96d-home-copy&quot;&gt;
-              &lt;h1&gt;Голосовой чат для игры с друзьями&lt;/h1&gt;
-              &lt;p&gt;Создай комнату до 8 человек и отправь ссылку друзьям.&lt;/p&gt;
+              &lt;h1&gt;Голосовой чат для игр с друзьями&lt;/h1&gt;
+              &lt;p&gt;Создай комнату и отправь ссылку друзьям. До 8 человек в одном разговоре.&lt;/p&gt;
               &lt;button type=&quot;button&quot; class=&quot;r96d-primary r96d-home-action&quot; data-action=&quot;create&quot; ${isLoading ? &#x27;disabled aria-busy=&quot;true&quot;&#x27; : &#x27;&#x27;}&gt;
                 ${isLoading ? &#x27;&lt;i class=&quot;r96d-button-spinner&quot; data-lucide=&quot;loader-circle&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;Создаём комнату…&#x27; : isError ? &#x27;Попробовать снова&#x27; : &#x27;Создать комнату&#x27;}
               &lt;/button&gt;
               &lt;div class=&quot;r96d-home-feedback&quot;&gt;
-                ${isError ? &#x27;&lt;div class=&quot;r96d-home-error&quot; role=&quot;alert&quot;&gt;&lt;i data-lucide=&quot;circle-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;Не удалось создать комнату. Попробуй ещё раз.&lt;/span&gt;&lt;/div&gt;&#x27; : &#x27;&#x27;}
+                ${isError ? &#x27;&lt;div class=&quot;r96d-home-error&quot; role=&quot;alert&quot;&gt;&lt;i data-lucide=&quot;circle-alert&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;Не удалось создать комнату.&lt;/span&gt;&lt;/div&gt;&#x27; : &#x27;&#x27;}
               &lt;/div&gt;
             &lt;/div&gt;
           &lt;/section&gt;`;
@@ -2578,22 +2570,22 @@ html&gt;body{padding:0}&lt;/style&gt;
         const invalid = Boolean(error);
         const tooLong = error === &#x27;too-long&#x27;;
         const value = tooLong ? &#x27;НевероятноДлинныйНикнеймИгрока12345&#x27; : invalid ? &#x27;&#x27; : &#x27;Влад&#x27;;
-        const errorText = tooLong ? &#x27;Не больше 32 символов.&#x27; : &#x27;Введи никнейм.&#x27;;
+        const errorText = tooLong ? &#x27;Не больше 32 символов&#x27; : &#x27;Введи никнейм&#x27;;
         const valueLength = [...value].length;
         const micTitle = accessGranted
           ? `Микрофон ${micOn ? &#x27;включён&#x27; : &#x27;выключен&#x27;}`
-          : &#x27;Микрофон не подключён&#x27;;
+          : &#x27;Нет доступа к микрофону&#x27;;
         const micDetails = accessGranted ? selectedDevices.mic : &#x27;Разреши доступ, чтобы говорить&#x27;;
         const micIcon = accessGranted &amp;&amp; micOn ? &#x27;mic&#x27; : &#x27;mic-off&#x27;;
         const micControl = accessGranted
           ? `&lt;button type=&quot;button&quot; class=&quot;r96d-switch&quot; role=&quot;switch&quot; aria-checked=&quot;${micOn}&quot; aria-label=&quot;${micOn ? &#x27;Выключить микрофон&#x27; : &#x27;Включить микрофон&#x27;}&quot; data-action=&quot;toggle-prejoin-mic&quot;&gt;&lt;/button&gt;`
           : &#x27;&lt;button type=&quot;button&quot; class=&quot;r96d-secondary r96d-audio-permission&quot; data-action=&quot;grant-prejoin&quot;&gt;Разрешить&lt;/button&gt;&#x27;;
-        const joinLabel = accessGranted &amp;&amp; !micOn ? &#x27;Войти без микрофона&#x27; : &#x27;Войти в разговор&#x27;;
+        const joinLabel = accessGranted &amp;&amp; !micOn ? &#x27;Войти без микрофона&#x27; : &#x27;Присоединиться&#x27;;
         return `
           &lt;section class=&quot;r96d-screen r96d-centered&quot;&gt;
             &lt;div class=&quot;r96d-card&quot;&gt;
               &lt;h2&gt;Вход в комнату&lt;/h2&gt;
-              ${created ? `&lt;div class=&quot;r96d-created-notice&quot; role=&quot;status&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;Комната создана. Если никто не войдёт, она станет неактивной в &lt;time datetime=&quot;${roomExpiresAt.toISOString()}&quot;&gt;${expiryTimeFormatter.format(roomExpiresAt)}&lt;/time&gt;.&lt;/span&gt;&lt;/div&gt;` : &#x27;&#x27;}
+              ${created ? `&lt;div class=&quot;r96d-created-notice&quot; role=&quot;status&quot;&gt;&lt;i data-lucide=&quot;circle-check&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;span&gt;Комната создана. Если до &lt;time datetime=&quot;${roomExpiresAt.toISOString()}&quot;&gt;${expiryTimeFormatter.format(roomExpiresAt)}&lt;/time&gt; никто не войдёт, ссылка перестанет действовать.&lt;/span&gt;&lt;/div&gt;` : &#x27;&#x27;}
               &lt;label class=&quot;r96d-field-label&quot; for=&quot;r96d-name&quot;&gt;Никнейм&lt;/label&gt;
               &lt;input class=&quot;r96d-input&quot; id=&quot;r96d-name&quot; value=&quot;${value}&quot; maxlength=&quot;32&quot; autocomplete=&quot;nickname&quot; aria-describedby=&quot;r96d-name-help${invalid ? &#x27; r96d-name-error&#x27; : &#x27;&#x27;}&quot; ${invalid ? &#x27;aria-invalid=&quot;true&quot;&#x27; : &#x27;&#x27;}&gt;
               &lt;span class=&quot;sr-only&quot; id=&quot;r96d-name-help&quot;&gt;От 1 до 32 символов&lt;/span&gt;
@@ -2608,8 +2600,8 @@ html&gt;body{padding:0}&lt;/style&gt;
             &lt;/div&gt;
             &lt;div class=&quot;r96d-prejoin-actions&quot;&gt;
               &lt;button type=&quot;button&quot; class=&quot;r96d-primary&quot; data-action=&quot;join&quot;&gt;${joinLabel}&lt;/button&gt;
-              &lt;button type=&quot;button&quot; class=&quot;r96d-icon&quot; aria-label=&quot;Копировать ссылку&quot; data-tooltip=&quot;Копировать ссылку&quot; data-action=&quot;copy&quot;&gt;&lt;i data-lucide=&quot;link&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;
-              &lt;button type=&quot;button&quot; class=&quot;r96d-icon&quot; aria-label=&quot;Настроить звук&quot; data-tooltip=&quot;Настроить звук&quot; data-action=&quot;settings&quot;&gt;&lt;i data-lucide=&quot;settings-2&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;
+              &lt;button type=&quot;button&quot; class=&quot;r96d-icon&quot; aria-label=&quot;Скопировать ссылку&quot; data-tooltip=&quot;Скопировать ссылку&quot; data-action=&quot;copy&quot;&gt;&lt;i data-lucide=&quot;link&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;
+              &lt;button type=&quot;button&quot; class=&quot;r96d-icon&quot; aria-label=&quot;Настройки звука&quot; data-tooltip=&quot;Настройки звука&quot; data-action=&quot;settings&quot;&gt;&lt;i data-lucide=&quot;settings-2&quot; aria-hidden=&quot;true&quot;&gt;&lt;/i&gt;&lt;/button&gt;
             &lt;/div&gt;
             &lt;/div&gt;
           &lt;/section&gt;`;
@@ -2617,9 +2609,9 @@ html&gt;body{padding:0}&lt;/style&gt;
 
       const accessMarkup = (kind) =&gt; {
         const states = {
-          permission: { icon: &#x27;mic&#x27;, title: &#x27;Разреши доступ к микрофону&#x27;, text: &#x27;Браузер покажет системный запрос. После разрешения микрофон включится автоматически.&#x27;, primary: &#x27;Разрешить и войти&#x27;, secondary: &#x27;Войти без микрофона&#x27; },
-          blocked: { icon: &#x27;mic-off&#x27;, title: &#x27;Доступ к микрофону заблокирован&#x27;, text: &#x27;Разреши микрофон в настройках браузера, затем обнови проверку.&#x27;, primary: &#x27;Проверить снова&#x27;, secondary: &#x27;Войти без микрофона&#x27; },
-          &#x27;no-device&#x27;: { icon: &#x27;mic-off&#x27;, title: &#x27;Микрофон не найден&#x27;, text: &#x27;Подключи микрофон или выбери другое устройство. В комнату всё равно можно войти без микрофона.&#x27;, primary: &#x27;Проверить устройства&#x27;, secondary: &#x27;Войти без микрофона&#x27; }
+          permission: { icon: &#x27;mic&#x27;, title: &#x27;Разреши доступ к микрофону&#x27;, text: &#x27;Если браузер запросил доступ, разреши его. Или войди без микрофона.&#x27;, primary: &#x27;Разрешить и войти&#x27;, secondary: &#x27;Войти без микрофона&#x27; },
+          blocked: { icon: &#x27;mic-off&#x27;, title: &#x27;Доступ к микрофону заблокирован&#x27;, text: &#x27;Разреши доступ к микрофону в настройках браузера и нажми «Проверить снова».&#x27;, primary: &#x27;Проверить снова&#x27;, secondary: &#x27;Войти без микрофона&#x27; },
+          &#x27;no-device&#x27;: { icon: &#x27;mic-off&#x27;, title: &#x27;Микрофон не найден&#x27;, text: &#x27;Подключи микрофон. Можно войти без него и слушать остальных.&#x27;, primary: &#x27;Проверить устройства&#x27;, secondary: &#x27;Войти без микрофона&#x27; }
         };
         const state = states[kind];
         return `&lt;section class=&quot;r96d-screen r96d-centered&quot;&gt;&lt;div class=&quot;r96d-card&quot;&gt;
@@ -2675,14 +2667,15 @@ html&gt;body{padding:0}&lt;/style&gt;
 
       const systemMarkup = (type) =&gt; {
         const states = {
-          &#x27;room-full&#x27;: { icon: &#x27;users&#x27;, title: &#x27;Комната уже заполнена&#x27;, text: &#x27;Попробуй подключиться немного позже.&#x27;, primary: &#x27;Попробовать снова&#x27;, secondary: &#x27;На главную&#x27; },
-          &#x27;connection-failed&#x27;: { icon: &#x27;unplug&#x27;, title: &#x27;Не удалось подключиться&#x27;, text: &#x27;Проверь интернет и попробуй ещё раз.&#x27;, primary: &#x27;Попробовать снова&#x27;, secondary: &#x27;На главную&#x27; },
-          expired: { icon: &#x27;clock-3&#x27;, title: &#x27;Ссылка больше не действует&#x27;, text: &#x27;В эту комнату никто не вошёл вовремя.&#x27;, primary: &#x27;На главную&#x27; },
-          &#x27;not-found&#x27;: { icon: &#x27;search-x&#x27;, title: &#x27;Комната не найдена&#x27;, text: &#x27;Проверь ссылку или перейди на главную.&#x27;, primary: &#x27;На главную&#x27; },
-          clipboard: { icon: &#x27;clipboard-x&#x27;, title: &#x27;Буфер обмена недоступен&#x27;, text: &#x27;Попробуй скопировать ссылку вручную.&#x27;, secondary: &#x27;Вернуться&#x27; },
-          disconnected: { icon: &#x27;unplug&#x27;, title: &#x27;Связь прервалась&#x27;, text: &#x27;Проверь интернет и попробуй подключиться снова.&#x27;, primary: &#x27;Подключиться снова&#x27;, secondary: &#x27;На главную&#x27; },
-          left: { icon: &#x27;log-out&#x27;, title: &#x27;Ты вышел из разговора&#x27;, text: &#x27;Можешь подключиться снова, пока комната активна.&#x27;, primary: &#x27;Подключиться снова&#x27;, secondary: &#x27;На главную&#x27; },
-          finished: { icon: &#x27;phone-off&#x27;, title: &#x27;Разговор завершён&#x27;, text: &#x27;Комнату нельзя открыть повторно.&#x27;, primary: &#x27;На главную&#x27; }
+          &#x27;room-full&#x27;: { icon: &#x27;users&#x27;, title: &#x27;В комнате нет мест&#x27;, text: &#x27;Попробуй войти чуть позже.&#x27;, primary: &#x27;Попробовать снова&#x27;, secondary: &#x27;На главную&#x27; },
+          &#x27;connection-failed&#x27;: { icon: &#x27;unplug&#x27;, title: &#x27;Не удалось подключиться&#x27;, text: &#x27;Проверь подключение к интернету и попробуй снова.&#x27;, primary: &#x27;Попробовать снова&#x27;, secondary: &#x27;На главную&#x27; },
+          expired: { icon: &#x27;clock-3&#x27;, title: &#x27;Ссылка больше не действует&#x27;, text: &#x27;Попроси новую ссылку или создай комнату.&#x27;, primary: &#x27;На главную&#x27; },
+          &#x27;not-found&#x27;: { icon: &#x27;search-x&#x27;, title: &#x27;Комната не найдена&#x27;, text: &#x27;Проверь ссылку или попроси отправить её ещё раз.&#x27;, primary: &#x27;На главную&#x27; },
+          clipboard: { icon: &#x27;clipboard-x&#x27;, title: &#x27;Не удалось скопировать ссылку&#x27;, text: &#x27;Скопируй ссылку вручную из поля ниже.&#x27;, secondary: &#x27;Вернуться&#x27; },
+          disconnected: { icon: &#x27;unplug&#x27;, title: &#x27;Связь прервалась&#x27;, text: &#x27;Проверь подключение к интернету и попробуй снова.&#x27;, primary: &#x27;Подключиться снова&#x27;, secondary: &#x27;На главную&#x27; },
+          left: { icon: &#x27;log-out&#x27;, title: &#x27;Ты вышел из разговора&#x27;, text: &#x27;Комната останется активной 10 минут после выхода всех участников. Ты можешь вернуться по этой ссылке.&#x27;, primary: &#x27;Вернуться в разговор&#x27;, secondary: &#x27;На главную&#x27; },
+          &#x27;left-last&#x27;: { icon: &#x27;log-out&#x27;, title: &#x27;Ты вышел из разговора&#x27;, text: &#x27;Комната останется активной 10 минут после выхода всех участников. Ты можешь вернуться по этой ссылке.&#x27;, primary: &#x27;Вернуться в разговор&#x27;, secondary: &#x27;На главную&#x27; },
+          finished: { icon: &#x27;phone-off&#x27;, title: &#x27;Разговор завершён&#x27;, text: &#x27;Создай новую комнату, чтобы продолжить общение.&#x27;, primary: &#x27;На главную&#x27; }
         };
         const state = states[type];
         const homeIsOnlyAction = state.primary === &#x27;На главную&#x27; &amp;&amp; !state.secondary;
@@ -2773,14 +2766,14 @@ html&gt;body{padding:0}&lt;/style&gt;
           else startConnection();
         }
         if (action === &#x27;system-primary&#x27;) {
-          if ([&#x27;expired&#x27;, &#x27;not-found&#x27;, &#x27;finished&#x27;].includes(current)) render(&#x27;home&#x27;);
+          if ([&#x27;expired&#x27;, &#x27;not-found&#x27;, &#x27;finished&#x27;, &#x27;left-last&#x27;].includes(current)) render(&#x27;home&#x27;);
           else startConnection();
         }
         if (action === &#x27;grant-prejoin&#x27;) {
           micOn = true;
           micPermissionGranted = true;
           render(current === &#x27;prejoin-created&#x27; ? &#x27;prejoin-created&#x27; : &#x27;prejoin-ready&#x27;);
-          notify(&#x27;Доступ к микрофону получен&#x27;);
+          notify(&#x27;Доступ к микрофону разрешён&#x27;);
         }
         if (action === &#x27;grant-and-join&#x27;) {
           micOn = true;
@@ -2789,7 +2782,7 @@ html&gt;body{padding:0}&lt;/style&gt;
         }
         if (action === &#x27;join-muted&#x27;) { micOn = false; startConnection(); }
         if (action === &#x27;settings&#x27;) openSettings(target);
-        if (action === &#x27;leave&#x27;) render(&#x27;left&#x27;);
+        if (action === &#x27;leave&#x27;) render(current === &#x27;solo&#x27; ? &#x27;left-last&#x27; : &#x27;left&#x27;);
         if (action === &#x27;system-secondary&#x27;) render(current === &#x27;clipboard&#x27; ? clipboardReturnScenario : &#x27;home&#x27;);
       });
 
@@ -2856,7 +2849,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           const prejoinMicDevice = main.querySelector(&#x27;[data-r96d-current-mic]&#x27;);
           if (prejoinMicTitle) prejoinMicTitle.textContent = &#x27;Микрофон включён&#x27;;
           if (prejoinMicDevice) prejoinMicDevice.textContent = selectedDevices.mic;
-          notify(&#x27;Доступ к микрофону получен&#x27;);
+          notify(&#x27;Доступ к микрофону разрешён&#x27;);
           micDeviceSelect.querySelector(&#x27;summary&#x27;).focus();
         }
         if (target.dataset.action === &#x27;test-settings-mic&#x27;) {

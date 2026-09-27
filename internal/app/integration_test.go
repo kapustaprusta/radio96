@@ -3,10 +3,14 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,15 +31,21 @@ func TestApplicationRoomFlow(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	t.Cleanup(cancel)
-	container, err := tcpostgres.Run(
-		ctx,
-		"postgres:17-alpine",
+	options := []testcontainers.ContainerCustomizer{
 		tcpostgres.WithDatabase("radio96"),
 		tcpostgres.WithUsername("radio96"),
 		tcpostgres.WithPassword("radio96"),
-		tcpostgres.WithInitScripts(filepath.Join("..", "..", "db", "migrations", "000001_create_rooms.up.sql")),
+		tcpostgres.WithInitScripts(
+			filepath.Join("..", "..", "db", "migrations", "000001_create_rooms.up.sql"),
+			filepath.Join("..", "..", "db", "migrations", "000002_room_lifecycle.up.sql"),
+		),
 		tcpostgres.BasicWaitStrategies(),
-	)
+	}
+	if os.Getenv("RADIO96_TEST_PODMAN") == "1" {
+		options = append(options, testcontainers.WithProvider(testcontainers.ProviderPodman))
+	}
+
+	container, err := tcpostgres.Run(ctx, "postgres:17-alpine", options...)
 	testcontainers.CleanupContainer(t, container)
 	if err != nil {
 		t.Fatalf("start PostgreSQL: %v", err)
@@ -117,7 +127,76 @@ func TestApplicationRoomFlow(t *testing.T) {
 
 			joined := requestStatus(t, ctx, handler, http.MethodPost, roomPath+"/join", `{"displayName":"  Влад 🎮  "}`, test.wantJoinStatus)
 			if test.configureMedia {
-				assertIssuedCredentials(t, cfg, joined, createdRoom.RoomID)
+				identities := []string{assertIssuedCredentials(t, cfg, joined, createdRoom.RoomID)}
+				type joinOutcome struct {
+					status   int
+					identity string
+				}
+				statuses := make(chan joinOutcome, room.MaxParticipants)
+				for range room.MaxParticipants {
+					go func() {
+						request := httptest.NewRequestWithContext(ctx, http.MethodPost, roomPath+"/join",
+							strings.NewReader(`{"displayName":"Друг"}`))
+						request.Header.Set("Content-Type", "application/json")
+						response := httptest.NewRecorder()
+						handler.ServeHTTP(response, request)
+						var credentials struct {
+							ParticipantIdentity string `json:"participantIdentity"`
+						}
+						_ = json.Unmarshal(response.Body.Bytes(), &credentials)
+						statuses <- joinOutcome{status: response.Code, identity: credentials.ParticipantIdentity}
+					}()
+				}
+
+				accepted, rejected := 0, 0
+				for range room.MaxParticipants {
+					outcome := <-statuses
+					switch outcome.status {
+					case http.StatusOK:
+						accepted++
+						identities = append(identities, outcome.identity)
+					case http.StatusConflict:
+						rejected++
+					}
+				}
+
+				if accepted != room.MaxParticipants-1 || rejected != 1 {
+					t.Errorf("concurrent API joins = %d accepted, %d rejected; want 7 and 1", accepted, rejected)
+				}
+
+				deliverTestWebhook(t, ctx, handler, cfg, "started-event", "room_started", createdRoom.RoomID)
+				deliverTestWebhook(t, ctx, handler, cfg, "started-event", "room_started", createdRoom.RoomID)
+				found = requestStatus(t, ctx, handler, http.MethodGet, roomPath, "", http.StatusOK)
+				if !strings.Contains(found.Body.String(), `"status":"active"`) {
+					t.Error("started room did not become active")
+				}
+
+				for index, identity := range identities {
+					deliverTestWebhook(t, ctx, handler, cfg, fmt.Sprintf("left-%d", index), "participant_left",
+						createdRoom.RoomID, identity)
+				}
+
+				found = requestStatus(t, ctx, handler, http.MethodGet, roomPath, "", http.StatusOK)
+				if !strings.Contains(found.Body.String(), `"status":"active"`) {
+					t.Error("room should remain active after the last departure")
+				}
+
+				deliverTestWebhook(t, ctx, handler, cfg, "finished-event", "room_finished", createdRoom.RoomID)
+				requestStatus(t, ctx, handler, http.MethodPost, roomPath+"/join", `{"displayName":"Вернулся"}`, http.StatusOK)
+				if _, err := application.database.Exec(ctx, `UPDATE rooms
+					SET created_at = now() - interval '12 minutes',
+					    started_at = now() - interval '11 minutes',
+					    last_empty_at = now() - interval '10 minutes 1 second'
+					WHERE id = $1`, createdRoom.RoomID); err != nil {
+					t.Fatalf("age empty room: %v", err)
+				}
+
+				found = requestStatus(t, ctx, handler, http.MethodGet, roomPath, "", http.StatusOK)
+				if !strings.Contains(found.Body.String(), `"status":"finished"`) {
+					t.Error("room did not finish after ten idle minutes")
+				}
+
+				requestStatus(t, ctx, handler, http.MethodPost, roomPath+"/join", `{"displayName":"Влад"}`, http.StatusGone)
 			} else if !strings.Contains(joined.Body.String(), `"code":"media_unavailable"`) {
 				t.Error("unconfigured media should return media_unavailable")
 			}
@@ -136,6 +215,8 @@ func newTestLiveKitServer(t *testing.T) *httptest.Server {
 		switch request.URL.Path {
 		case "/twirp/livekit.RoomService/ListRooms":
 			result = &livekitproto.ListRoomsResponse{}
+		case "/twirp/livekit.RoomService/ListParticipants":
+			result = &livekitproto.ListParticipantsResponse{}
 		case "/twirp/livekit.RoomService/CreateRoom":
 			payload, err := io.ReadAll(request.Body)
 			if err != nil {
@@ -145,8 +226,10 @@ func newTestLiveKitServer(t *testing.T) *httptest.Server {
 			}
 
 			var create livekitproto.CreateRoomRequest
-			if err := proto.Unmarshal(payload, &create); err != nil || create.MaxParticipants != room.MaxParticipants {
-				t.Errorf("CreateRoom max participants = %d, error = %v", create.MaxParticipants, err)
+			if err := proto.Unmarshal(payload, &create); err != nil || create.MaxParticipants != room.MaxParticipants ||
+				create.DepartureTimeout != 1 {
+				t.Errorf("CreateRoom max participants = %d, departure timeout = %d, error = %v",
+					create.MaxParticipants, create.DepartureTimeout, err)
 				response.WriteHeader(http.StatusBadRequest)
 				return
 			}
@@ -169,6 +252,39 @@ func newTestLiveKitServer(t *testing.T) *httptest.Server {
 	}))
 }
 
+func deliverTestWebhook(t *testing.T, ctx context.Context, handler http.Handler, cfg *config.Config,
+	id, eventType, roomName string, participantIdentity ...string,
+) {
+	t.Helper()
+	payload := map[string]any{
+		"id": id, "event": eventType, "createdAt": time.Now().Unix(), "room": map[string]string{"name": roomName},
+	}
+	if len(participantIdentity) > 0 {
+		payload["participant"] = map[string]string{"identity": participantIdentity[0]}
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encode webhook: %v", err)
+	}
+
+	checksum := sha256.Sum256(body)
+	token, err := auth.NewAccessToken(cfg.LiveKitAPIKey, cfg.LiveKitAPISecret).
+		SetSha256(base64.StdEncoding.EncodeToString(checksum[:])).SetValidFor(time.Minute).ToJWT()
+	if err != nil {
+		t.Fatalf("sign webhook: %v", err)
+	}
+
+	request := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/v1/livekit/webhook", bytes.NewReader(body))
+	request.Header.Set("Authorization", token)
+	request.Header.Set("Content-Type", "application/webhook+json")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("webhook status = %d, want 204: %s", response.Code, response.Body.String())
+	}
+}
+
 func requestStatus(
 	t *testing.T, ctx context.Context, handler http.Handler, method, path, body string, wantStatus int,
 ) *httptest.ResponseRecorder {
@@ -188,7 +304,7 @@ func requestStatus(
 	return response
 }
 
-func assertIssuedCredentials(t *testing.T, cfg *config.Config, response *httptest.ResponseRecorder, roomID string) {
+func assertIssuedCredentials(t *testing.T, cfg *config.Config, response *httptest.ResponseRecorder, roomID string) string {
 	t.Helper()
 
 	var credentials struct {
@@ -221,4 +337,6 @@ func assertIssuedCredentials(t *testing.T, cfg *config.Config, response *httptes
 	if claims.ExpiresAt.Sub(claims.IssuedAt.Time) != room.ParticipantTokenTTL {
 		t.Error("issued participant token has the wrong TTL")
 	}
+
+	return credentials.ParticipantIdentity
 }

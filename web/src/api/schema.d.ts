@@ -16,8 +16,9 @@ export interface paths {
         /**
          * Create a room
          * @description Creates an open room and returns its opaque application ID together
-         *     with the invite URL. The LiveKit room is created later, when the first
-         *     participant connects.
+         *     with the invite URL. The LiveKit room is prepared later, immediately
+         *     before the first participant token is issued; issuing a token alone
+         *     does not mark the application room active.
          */
         post: operations["createRoom"];
         delete?: never;
@@ -43,7 +44,9 @@ export interface paths {
         /**
          * Get public room status
          * @description Returns the application-level room status. Participant information and
-         *     the internal LiveKit room name are never exposed.
+         *     the internal LiveKit room name are never exposed. Once a conversation
+         *     has started, the room remains active for ten minutes after its last
+         *     participant leaves, even if the LiveKit media room closes sooner.
          */
         get: operations["getRoom"];
         put?: never;
@@ -76,7 +79,8 @@ export interface paths {
          *     connection credentials. Duplicate display names are allowed. Local
          *     microphone availability and browser permission are not prerequisites:
          *     the participant may connect without publishing an audio track and
-         *     start publishing a microphone later with the same credentials.
+         *     start publishing a microphone later with the same credentials. A user
+         *     may rejoin during the ten-minute empty-room grace period.
          */
         post: operations["joinRoom"];
         delete?: never;
@@ -204,7 +208,7 @@ export interface components {
              * @example room_finished
              * @example room_full
              * @example media_unavailable
-             * @example invalid_webhook
+             * @example invalid_webhook_signature
              * @example internal_error
              */
             code: string;
@@ -265,6 +269,7 @@ export interface operations {
                 };
             };
             500: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
         };
     };
     getRoom: {
@@ -360,6 +365,7 @@ export interface operations {
             400: components["responses"]["ErrorResponse"];
             401: components["responses"]["ErrorResponse"];
             500: components["responses"]["ErrorResponse"];
+            503: components["responses"]["ErrorResponse"];
         };
     };
 }

@@ -295,9 +295,28 @@ button {
 }
 
 .created-room-notice {
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 9px 11px;
+  border: 1px solid light-dark(#d8d6ca, #3b4038);
+  border-radius: 11px;
+  color: light-dark(#5e625a, #c5c9bf);
+  background: light-dark(#eeece3, #20241e);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.created-room-notice svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  color: light-dark(#9222c6, #ddff4f);
+}
+
+.created-room-notice + form .field-label {
+  margin-top: 18px;
 }
 
 .name-count {
@@ -355,6 +374,10 @@ button {
   border-color: var(--danger);
 }
 
+.prejoin-card .text-input[aria-invalid="true"] {
+  border-color: #e85a4d;
+}
+
 .text-input--compact {
   min-height: 44px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -369,10 +392,30 @@ button {
   line-height: 1.4;
 }
 
+.field-feedback {
+  min-height: 17px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 7px;
+}
+
+.field-feedback .field-error {
+  margin: 0;
+}
+
+.field-feedback .name-count {
+  margin-top: 0;
+  margin-left: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .audio-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-rows: 36px;
+  grid-template-rows: minmax(44px, auto);
   align-items: center;
   gap: 12px;
   margin-top: 14px;
@@ -404,6 +447,36 @@ button {
 .audio-row__copy strong,
 .audio-row__copy span {
   display: block;
+}
+
+.audio-permission {
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.permission-feedback {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.permission-feedback[role="alert"] {
+  color: var(--danger);
+}
+
+.prejoin-listen {
+  min-height: 44px;
+  display: block;
+  margin: 8px auto 0;
+  padding: 0 12px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
 .audio-row__copy strong {
@@ -637,11 +710,11 @@ button {
 .audio-test__wave {
   height: 52px;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   gap: 3px;
   overflow: hidden;
-  padding: 0 9px;
+  padding: 8px 9px;
   border-radius: 10px;
   background: light-dark(#e9e8e0, #282c27);
 }
@@ -656,8 +729,17 @@ button {
   transition: height 80ms linear;
 }
 
-.audio-test__wave[data-playback="true"] span {
-  animation: test-wave 650ms ease-in-out infinite alternate;
+.audio-test[data-state="error"] .audio-test__status {
+  color: var(--danger);
+}
+
+.audio-test[data-state="error"] .audio-test__status::before {
+  background: var(--danger);
+  box-shadow: none;
+}
+
+.audio-test[data-state="pending"] .audio-test__wave span {
+  opacity: 0.42;
 }
 
 .icon-button {
@@ -1001,12 +1083,13 @@ button {
 }
 
 .device-permission {
-  margin-top: 14px;
+  margin-top: 10px;
   font-size: 13px;
 }
 
 .device-select__trigger:disabled {
-  opacity: 0.55;
+  color: light-dark(#777b73, #8f948b);
+  opacity: 0.72;
   cursor: not-allowed;
 }
 
@@ -1158,6 +1241,10 @@ button {
 
 .call-feedback .toast {
   bottom: 90px;
+}
+
+.call-feedback .microphone-toast {
+  bottom: 142px;
 }
 
 .connection-banner {

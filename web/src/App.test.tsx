@@ -1,10 +1,19 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
 const inviteCode = "A".repeat(32);
+
+beforeEach(() => {
+  const browser = Object.create(navigator) as Navigator;
+  Object.defineProperty(browser, "permissions", { value: { query: vi.fn().mockResolvedValue({
+    state: "granted", addEventListener: vi.fn(), removeEventListener: vi.fn(),
+  }) } });
+  Object.defineProperty(browser, "mediaDevices", { value: { enumerateDevices: vi.fn().mockResolvedValue([]) } });
+  vi.stubGlobal("navigator", browser);
+});
 
 describe("home", () => {
   it("creates a room and navigates to its same-origin pre-join", async () => {
@@ -100,7 +109,7 @@ describe("brand navigation", () => {
     expect(link).toHaveAttribute("href", "/");
     await user.click(link.querySelector<HTMLElement>(selector)!);
 
-    expect(screen.getByRole("heading", { name: "Голосовой чат для игры с друзьями" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Голосовой чат для игр с друзьями" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
     expect(document.title).toBe("radio96");
   });
@@ -114,7 +123,7 @@ describe("brand navigation", () => {
     expect(screen.getByRole("link", { name: "radio96 — на главную" })).toHaveFocus();
     await user.keyboard("{Enter}");
 
-    expect(screen.getByRole("heading", { name: "Голосовой чат для игры с друзьями" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Голосовой чат для игр с друзьями" })).toBeInTheDocument();
     expect(window.location.pathname).toBe("/");
   });
 
@@ -193,6 +202,69 @@ describe("room gate", () => {
 });
 
 describe("pre-join", () => {
+  it("requests microphone access explicitly, shows the real device, and reacts to revocation", async () => {
+    const permissionListeners = new Set<() => void>();
+    const permission = { state: "prompt" as PermissionState,
+      addEventListener: vi.fn((_name: string, listener: () => void) => { permissionListeners.add(listener); }),
+      removeEventListener: vi.fn((_name: string, listener: () => void) => { permissionListeners.delete(listener); }) };
+    const stop = vi.fn();
+    const getUserMedia = vi.fn().mockResolvedValue({ getTracks: () => [{ stop }] });
+    const browser = Object.create(navigator) as Navigator;
+    Object.defineProperty(browser, "permissions", { value: { query: vi.fn().mockResolvedValue(permission) } });
+    Object.defineProperty(browser, "mediaDevices", { value: { getUserMedia,
+      enumerateDevices: vi.fn().mockResolvedValue([{ kind: "audioinput", deviceId: "default", label: "Микрофон ноутбука" }]) } });
+    vi.stubGlobal("navigator", browser);
+    window.history.replaceState(null, "", `/rooms/${inviteCode}`);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ status: "open", expiresAt: "2026-09-04T10:00:00Z" }, 200)));
+
+    render(<App />);
+    const user = userEvent.setup();
+    const allow = await screen.findByRole("button", { name: "Разрешить" });
+    expect(screen.getByText("Нет доступа к микрофону")).toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Настройки звука" }));
+    await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
+    expect(screen.getByText("Разреши доступ, чтобы говорить")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(allow);
+    expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(stop).toHaveBeenCalledOnce();
+    expect(await screen.findByRole("switch", { name: "Не включать микрофон при входе" })).toBeInTheDocument();
+    expect(screen.getByText("Микрофон ноутбука")).toBeInTheDocument();
+    expect(screen.getByText("Доступ к микрофону разрешён").closest('[role="status"]')).toBeInTheDocument();
+
+    permission.state = "denied";
+    act(() => permissionListeners.forEach((listener) => listener()));
+    expect(screen.getByRole("button", { name: "Разрешить" })).toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
+  });
+
+  it("keeps one pending permission request and stops a late track after leaving pre-join", async () => {
+    let resolveRequest: ((stream: MediaStream) => void) | undefined;
+    const getUserMedia = vi.fn().mockReturnValue(new Promise<MediaStream>((resolve) => { resolveRequest = resolve; }));
+    const browser = Object.create(navigator) as Navigator;
+    Object.defineProperty(browser, "permissions", { value: { query: vi.fn().mockResolvedValue({
+      state: "prompt", addEventListener: vi.fn(), removeEventListener: vi.fn(),
+    }) } });
+    Object.defineProperty(browser, "mediaDevices", { value: { getUserMedia, enumerateDevices: vi.fn().mockResolvedValue([]) } });
+    vi.stubGlobal("navigator", browser);
+    window.history.replaceState(null, "", `/rooms/${inviteCode}`);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ status: "open", expiresAt: "2026-09-04T10:00:00Z" }, 200)));
+
+    const { unmount } = render(<App />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Разрешить" }));
+    expect(screen.getByRole("button", { name: "Ожидаем…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Присоединиться" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Настройки звука" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Войти без микрофона" })).toBeEnabled();
+    expect(getUserMedia).toHaveBeenCalledOnce();
+    unmount();
+    const stop = vi.fn();
+    await act(async () => resolveRequest?.({ getTracks: () => [{ stop }] } as unknown as MediaStream));
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
   it.each([
     { name: "empty", value: "" },
     { name: "whitespace-only", value: "   " },
@@ -212,13 +284,13 @@ describe("pre-join", () => {
     await user.tab();
 
     expect(input).not.toHaveAttribute("aria-invalid", "true");
-    expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Введи никнейм")).not.toBeInTheDocument();
     await user.click(screen.getByRole("switch", { name: "Не включать микрофон при входе" }));
-    await user.click(screen.getByRole("button", { name: "Настроить звук" }));
+    await user.click(screen.getByRole("button", { name: "Настройки звука" }));
     await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
 
     expect(input).not.toHaveAttribute("aria-invalid", "true");
-    expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Введи никнейм")).not.toBeInTheDocument();
   });
 
   it.each([
@@ -240,15 +312,15 @@ describe("pre-join", () => {
       await user.keyboard("{Enter}");
     } else {
       if (action === "listener") {
-        await user.click(screen.getByRole("switch", { name: "Не включать микрофон при входе" }));
+        await user.click(await screen.findByRole("switch", { name: "Не включать микрофон при входе" }));
       }
       await user.click(screen.getByRole("button", {
-        name: action === "listener" ? "Войти без микрофона" : "Войти в разговор",
+        name: action === "listener" ? "Войти без микрофона" : "Присоединиться",
       }));
     }
 
     expect(input).toHaveAttribute("aria-invalid", "true");
-    expect(screen.getByRole("alert")).toHaveTextContent("Введи никнейм.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Введи никнейм");
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     await user.type(input, "Влад");
@@ -257,7 +329,7 @@ describe("pre-join", () => {
     await user.tab();
 
     expect(input).not.toHaveAttribute("aria-invalid", "true");
-    expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Введи никнейм")).not.toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
@@ -275,8 +347,8 @@ describe("pre-join", () => {
     const input = await screen.findByRole("textbox", { name: "Никнейм" });
     if (value) await user.type(input, value);
     if (submit === "keyboard") await user.keyboard("{Enter}");
-    else await user.click(screen.getByRole("button", { name: "Войти в разговор" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Введи никнейм.");
+    else await user.click(screen.getByRole("button", { name: "Присоединиться" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Введи никнейм");
     expect(input).toHaveAttribute("aria-invalid", "true");
 
     if (focus === "keyboard") {
@@ -291,7 +363,7 @@ describe("pre-join", () => {
     expect(input).not.toHaveAttribute("aria-invalid", "true");
     expect(input).toHaveAttribute("aria-describedby", "display-name-hint");
     await user.keyboard("{Enter}");
-    expect(screen.getByRole("alert")).toHaveTextContent("Введи никнейм.");
+    expect(screen.getByRole("alert")).toHaveTextContent("Введи никнейм");
     expect(input).toHaveAttribute("aria-invalid", "true");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -317,12 +389,12 @@ describe("pre-join", () => {
     expect(input).toHaveValue(expected);
     if (invalid) {
       expect(input).toHaveAttribute("aria-invalid", "true");
-      expect(screen.getByRole("alert")).toHaveTextContent("Не больше 32 символов.");
+      expect(screen.getByRole("alert")).toHaveTextContent("Не больше 32 символов");
     } else {
       expect(input).not.toHaveAttribute("aria-invalid", "true");
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     }
-    expect(screen.queryByText("Введи никнейм.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Введи никнейм")).not.toBeInTheDocument();
   });
 
   it("shows a Unicode-aware nickname count only near the limit", async () => {
@@ -353,7 +425,7 @@ describe("pre-join", () => {
     expect(screen.getByRole("switch", { name: "Включить микрофон при входе" }))
       .toHaveAttribute("aria-checked", "false");
 
-    await user.click(screen.getByRole("button", { name: "Настроить звук" }));
+    await user.click(screen.getByRole("button", { name: "Настройки звука" }));
     expect(screen.getByRole("dialog", { name: "Настройки звука" })).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Закрыть настройки" }));
@@ -374,7 +446,7 @@ describe("pre-join", () => {
     );
 
     render(<App />);
-    await user.click(await screen.findByRole("button", { name: "Копировать ссылку" }));
+    await user.click(await screen.findByRole("button", { name: "Скопировать ссылку" }));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(window.location.href));
     expect(screen.getByRole("status")).toHaveTextContent("Ссылка скопирована");
