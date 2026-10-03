@@ -12,13 +12,13 @@ const errorCopy = {
   room_finished: {
     title: "Разговор завершён", text: "Создай новую комнату, чтобы продолжить общение.", icon: PhoneOffIcon,
   },
-  room_full: { title: "В комнате нет мест", text: "Попробуй войти чуть позже.", icon: UsersIcon },
+  room_full: { title: "В комнате нет мест", text: "Попробуй войти позже.", icon: UsersIcon },
   media_unavailable: {
-    title: "Голосовой сервис временно недоступен", text: "Попробуй подключиться немного позже.", icon: UnplugIcon,
+    title: "Голосовой сервис временно недоступен", text: "Попробуй подключиться позже.", icon: UnplugIcon,
   },
-  internal_error: { title: "Что-то пошло не так", text: "Попробуй ещё раз чуть позже.", icon: UnplugIcon },
-  connection_failed: { title: "Не удалось подключиться", text: "Проверь подключение к интернету и попробуй снова.", icon: UnplugIcon },
-  disconnected: { title: "Связь прервалась", text: "Проверь подключение к интернету и попробуй снова.", icon: UnplugIcon },
+  internal_error: { title: "Что-то пошло не так", text: "Попробуй ещё раз позже.", icon: UnplugIcon },
+  connection_failed: { title: "Не удалось подключиться", text: "Проверь интернет и попробуй ещё раз.", icon: UnplugIcon },
+  disconnected: { title: "Связь прервалась", text: "Проверь интернет и попробуй ещё раз.", icon: UnplugIcon },
 };
 
 export function RoomError({ code, onRetry, navigate }: RoomErrorProps) {

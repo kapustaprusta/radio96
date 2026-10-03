@@ -197,7 +197,7 @@ export function AudioSettingsDialog({
     } catch {
       if (active.current && !controller.signal.aborted) {
         failed = true;
-        setOutputError("Не удалось проверить динамики.");
+        setOutputError("Не удалось воспроизвести тестовый звук.");
         setSpeakerTestState("error");
       }
     }

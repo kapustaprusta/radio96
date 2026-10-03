@@ -65,7 +65,7 @@ export function CallView({
     } catch (error: unknown) {
       if (active.current) {
         const code = error instanceof MediaError ? error.code : "microphone_unavailable";
-        setMicrophoneError(microphoneErrorMessage(code));
+        setMicrophoneError(microphoneErrorMessage(code, enabled));
       }
     } finally {
       changingMicrophone.current = false;
@@ -107,7 +107,7 @@ export function CallView({
       {banner && <div className="connection-banner" role="status">{banner}</div>}
       {(snapshot.audioPlaybackBlocked || audioError) && (
         <div className="connection-banner connection-banner--audio">
-          <span>{audioError ? "Не удалось включить звук. Попробуй ещё раз." : "Нажми, чтобы слышать участников."}</span>
+          <span>{audioError ? "Не удалось включить звук. Попробуй ещё раз." : "Нажми «Включить звук», чтобы слышать участников."}</span>
           <button className="button button--secondary" type="button" onClick={async () => {
             try { await session.startAudio(); if (active.current) setAudioError(false); }
             catch { if (active.current) setAudioError(true); }
@@ -194,7 +194,7 @@ export function CallView({
   );
 }
 
-function microphoneErrorMessage(code: MediaErrorCode): string {
+function microphoneErrorMessage(code: MediaErrorCode, enabled: boolean): string {
   if (code === "microphone_denied") {
     return "Разреши доступ к микрофону в настройках браузера. "
       + "Ты можешь продолжать слушать.";
@@ -202,5 +202,5 @@ function microphoneErrorMessage(code: MediaErrorCode): string {
   if (code === "microphone_not_found") {
     return "Микрофон не найден. Подключи устройство и попробуй снова.";
   }
-  return "Не удалось переключить микрофон. Проверь устройство и попробуй снова.";
+  return `Не удалось ${enabled ? "включить" : "выключить"} микрофон. Проверь устройство и попробуй снова.`;
 }

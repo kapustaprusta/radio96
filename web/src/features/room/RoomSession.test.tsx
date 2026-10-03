@@ -143,37 +143,45 @@ describe("join and call", () => {
       expect(session.getSnapshot().connection).toBe("connected");
       expect(screen.getByRole("switch", { name: "Включить микрофон" })).toHaveAttribute("aria-checked", "false");
       if (outcome === "rejects") {
-        expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось переключить микрофон");
+        expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось включить микрофон");
       } else {
         expect(screen.getByRole("switch", { name: "Включить микрофон" })).toBeDisabled();
       }
     },
   );
 
-  it.each(["rejects", "stalls"] as const)(
-    "keeps the call open when enabling the microphone $outcome",
-    async (outcome) => {
+  it.each([
+    { withMicrophone: false, outcome: "rejects", action: "Включить микрофон", error: "Не удалось включить микрофон" },
+    { withMicrophone: true, outcome: "rejects", action: "Выключить микрофон", error: "Не удалось выключить микрофон" },
+    { withMicrophone: false, outcome: "stalls", action: "Включить микрофон", error: "" },
+    { withMicrophone: true, outcome: "stalls", action: "Выключить микрофон", error: "" },
+  ] as const)(
+    "keeps the call open when $action $outcome",
+    async ({ withMicrophone, outcome, action, error }) => {
       const session = new FakeMediaSession();
       vi.mocked(createMediaSession).mockReturnValueOnce(session);
       mockAPI();
       render(<App />);
-      const user = await join(false);
+      const user = await join(withMicrophone);
       await screen.findByRole("heading", { name: "Голосовая комната" });
+      await waitFor(() => expect(screen.getByRole("switch", { name: action })).toHaveAttribute(
+        "aria-checked", String(withMicrophone),
+      ));
       if (outcome === "rejects") {
         session.setMicrophoneEnabled.mockRejectedValueOnce(new MediaError("microphone_unavailable"));
       } else {
         session.setMicrophoneEnabled.mockReturnValueOnce(new Promise<void>(() => undefined));
       }
 
-      await user.click(screen.getByRole("switch", { name: "Включить микрофон" }));
+      await user.click(screen.getByRole("switch", { name: action }));
 
       expect(screen.getByRole("heading", { name: "Голосовая комната" })).toBeInTheDocument();
       expect(session.disconnect).not.toHaveBeenCalled();
       expect(session.getSnapshot().connection).toBe("connected");
       if (outcome === "rejects") {
-        expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось переключить микрофон");
+        expect(await screen.findByRole("alert")).toHaveTextContent(error);
       } else {
-        expect(screen.getByRole("switch", { name: "Включить микрофон" })).toBeDisabled();
+        expect(screen.getByRole("switch", { name: action })).toBeDisabled();
       }
     },
   );
@@ -250,7 +258,7 @@ describe("join and call", () => {
     await user.type(await screen.findByRole("textbox", { name: "Никнейм" }), "Влад");
     await user.dblClick(screen.getByRole("button", { name: "Присоединиться" }));
     expect(await screen.findByRole("button", { name: "Подключаем микрофон…" })).toBeDisabled();
-    expect(screen.getByText("Если браузер запросил доступ, разреши его. Или войди без микрофона.")).toBeInTheDocument();
+    expect(screen.getByText("Разреши браузеру использовать микрофон или войди без него.")).toBeInTheDocument();
     expect(createMediaSession).toHaveBeenCalledOnce();
     await user.click(action === "cancel"
       ? screen.getByRole("button", { name: "Отменить" })
@@ -348,7 +356,7 @@ describe("join and call", () => {
     }
     if (action === "leave") {
       expect(screen.getByRole("heading", { name: "Ты вышел из разговора" })).toBeInTheDocument();
-      expect(screen.getByText(/Комната останется активной 10 минут после выхода всех участников/)).toBeInTheDocument();
+      expect(screen.getByText(/После выхода последнего участника ссылка будет работать ещё 10 минут/)).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Вернуться в разговор" })).toBeInTheDocument();
       expect(screen.getByRole("button", { name: "На главную" })).toBeInTheDocument();
     }
