@@ -208,7 +208,7 @@ export function PreJoin({
           <div className="field-feedback">
             {(nameError || serverNameError) && (
               <p className="field-error" id="display-name-error" role="alert">
-                {nameError ? errorMessages[nameError] : "Проверь никнейм: от 1 до 32 символов"}
+                {nameError ? errorMessages[nameError] : "Введи никнейм длиной от 1 до 32 символов"}
               </p>
             )}
             {Array.from(displayName).length >= 28 && (
@@ -225,7 +225,7 @@ export function PreJoin({
                 ? `Микрофон ${microphoneEnabled ? "будет включён" : "выключен"}` : "Нет доступа к микрофону"}</strong>
               <span>{hasMicrophoneAccess ? selectedInput.label : permissionPending
                 ? "Запрашиваем доступ…" : microphonePermission === "denied"
-                  ? "Проверь разрешение в браузере" : "Разреши доступ, чтобы говорить"}</span>
+                  ? "Разреши доступ в настройках браузера" : "Разреши доступ, чтобы говорить"}</span>
             </span>
             {hasMicrophoneAccess ? (
               <button

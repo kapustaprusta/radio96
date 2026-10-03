@@ -62,7 +62,7 @@ function NotFound({ navigate }: { navigate: (path: string) => void }) {
       <div className="state-stack">
         <span className="state-icon" aria-hidden="true"><SearchIcon /></span>
         <h1>Такой страницы нет</h1>
-        <p>Вернись на главную и создай голосовую комнату.</p>
+        <p>Вернись на главную, чтобы создать комнату.</p>
         <div className="state-actions">
           <button className="button button--primary" type="button" onClick={() => navigate("/")}>
             На главную

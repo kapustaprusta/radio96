@@ -10,8 +10,8 @@ export function AudioTestPanel({ kind, state, bars = idleBars, error }: {
   error?: string;
 }) {
   const microphone = kind === "microphone";
-  const title = state === "error" ? microphone ? "Не удалось включить микрофон" : error ?? "Не удалось проверить динамики"
-    : state === "pending" ? microphone ? "Подключаем микрофон…" : "Готовим тестовый звук…"
+  const title = state === "error" ? microphone ? "Не удалось включить микрофон" : error ?? "Не удалось воспроизвести тестовый звук"
+    : state === "pending" ? microphone ? "Подключаем микрофон…" : "Запускаем тестовый звук…"
       : microphone ? "Скажи что-нибудь" : "Играет тестовый звук";
   const status = state === "error" ? "Ошибка" : state === "pending" ? "Подожди"
     : microphone ? "Проверяем" : "Играет";

@@ -2176,7 +2176,7 @@ html&gt;body{padding:0}&lt;/style&gt;
               &lt;button type=&quot;button&quot; class=&quot;r96d-primary r96d-settings-permission&quot; data-r96d-settings-permission data-action=&quot;grant-settings&quot; hidden&gt;Разрешить доступ&lt;/button&gt;
               &lt;div class=&quot;r96d-audio-test&quot; data-r96d-mic-test data-visible=&quot;false&quot; data-state=&quot;idle&quot; aria-live=&quot;polite&quot;&gt;
                 &lt;div class=&quot;r96d-audio-test-head&quot;&gt;&lt;strong data-r96d-mic-test-message&gt;Скажи что-нибудь&lt;/strong&gt;&lt;span class=&quot;r96d-test-live&quot; data-r96d-mic-test-status&gt;Проверяем&lt;/span&gt;&lt;/div&gt;
-                &lt;div class=&quot;r96d-test-wave&quot; data-r96d-wave=&quot;mic&quot; role=&quot;img&quot; aria-label=&quot;Уровень входящего звука&quot;&gt;&lt;/div&gt;
+                &lt;div class=&quot;r96d-test-wave&quot; data-r96d-wave=&quot;mic&quot; role=&quot;img&quot; aria-label=&quot;Уровень микрофона&quot;&gt;&lt;/div&gt;
               &lt;/div&gt;
             &lt;/section&gt;
             &lt;section class=&quot;r96d-device-panel&quot;&gt;
@@ -2517,7 +2517,7 @@ html&gt;body{padding:0}&lt;/style&gt;
           if (run !== speakerTestRun) return;
           stopSpeakerTest({ hide: false });
           speakerTestPanel.setAttribute(&#x27;data-state&#x27;, &#x27;error&#x27;);
-          speakerTestMessage.textContent = &#x27;Не удалось воспроизвести звук&#x27;;
+          speakerTestMessage.textContent = &#x27;Не удалось воспроизвести тестовый звук&#x27;;
           speakerTestStatus.textContent = &#x27;Ошибка&#x27;;
         }
       };
@@ -2609,9 +2609,9 @@ html&gt;body{padding:0}&lt;/style&gt;
 
       const accessMarkup = (kind) =&gt; {
         const states = {
-          permission: { icon: &#x27;mic&#x27;, title: &#x27;Разреши доступ к микрофону&#x27;, text: &#x27;Если браузер запросил доступ, разреши его. Или войди без микрофона.&#x27;, primary: &#x27;Разрешить и войти&#x27;, secondary: &#x27;Войти без микрофона&#x27; },
+          permission: { icon: &#x27;mic&#x27;, title: &#x27;Разреши доступ к микрофону&#x27;, text: &#x27;Разреши браузеру использовать микрофон или войди без него.&#x27;, primary: &#x27;Разрешить и войти&#x27;, secondary: &#x27;Войти без микрофона&#x27; },
           blocked: { icon: &#x27;mic-off&#x27;, title: &#x27;Доступ к микрофону заблокирован&#x27;, text: &#x27;Разреши доступ к микрофону в настройках браузера и нажми «Проверить снова».&#x27;, primary: &#x27;Проверить снова&#x27;, secondary: &#x27;Войти без микрофона&#x27; },
-          &#x27;no-device&#x27;: { icon: &#x27;mic-off&#x27;, title: &#x27;Микрофон не найден&#x27;, text: &#x27;Подключи микрофон. Можно войти без него и слушать остальных.&#x27;, primary: &#x27;Проверить устройства&#x27;, secondary: &#x27;Войти без микрофона&#x27; }
+          &#x27;no-device&#x27;: { icon: &#x27;mic-off&#x27;, title: &#x27;Микрофон не найден&#x27;, text: &#x27;Подключи микрофон или войди без него, чтобы слушать остальных.&#x27;, primary: &#x27;Проверить устройства&#x27;, secondary: &#x27;Войти без микрофона&#x27; }
         };
         const state = states[kind];
         return `&lt;section class=&quot;r96d-screen r96d-centered&quot;&gt;&lt;div class=&quot;r96d-card&quot;&gt;
@@ -2667,14 +2667,14 @@ html&gt;body{padding:0}&lt;/style&gt;
 
       const systemMarkup = (type) =&gt; {
         const states = {
-          &#x27;room-full&#x27;: { icon: &#x27;users&#x27;, title: &#x27;В комнате нет мест&#x27;, text: &#x27;Попробуй войти чуть позже.&#x27;, primary: &#x27;Попробовать снова&#x27;, secondary: &#x27;На главную&#x27; },
-          &#x27;connection-failed&#x27;: { icon: &#x27;unplug&#x27;, title: &#x27;Не удалось подключиться&#x27;, text: &#x27;Проверь подключение к интернету и попробуй снова.&#x27;, primary: &#x27;Попробовать снова&#x27;, secondary: &#x27;На главную&#x27; },
+          &#x27;room-full&#x27;: { icon: &#x27;users&#x27;, title: &#x27;В комнате нет мест&#x27;, text: &#x27;Попробуй войти позже.&#x27;, primary: &#x27;Попробовать снова&#x27;, secondary: &#x27;На главную&#x27; },
+          &#x27;connection-failed&#x27;: { icon: &#x27;unplug&#x27;, title: &#x27;Не удалось подключиться&#x27;, text: &#x27;Проверь интернет и попробуй ещё раз.&#x27;, primary: &#x27;Попробовать снова&#x27;, secondary: &#x27;На главную&#x27; },
           expired: { icon: &#x27;clock-3&#x27;, title: &#x27;Ссылка больше не действует&#x27;, text: &#x27;Попроси новую ссылку или создай комнату.&#x27;, primary: &#x27;На главную&#x27; },
           &#x27;not-found&#x27;: { icon: &#x27;search-x&#x27;, title: &#x27;Комната не найдена&#x27;, text: &#x27;Проверь ссылку или попроси отправить её ещё раз.&#x27;, primary: &#x27;На главную&#x27; },
           clipboard: { icon: &#x27;clipboard-x&#x27;, title: &#x27;Не удалось скопировать ссылку&#x27;, text: &#x27;Скопируй ссылку вручную из поля ниже.&#x27;, secondary: &#x27;Вернуться&#x27; },
-          disconnected: { icon: &#x27;unplug&#x27;, title: &#x27;Связь прервалась&#x27;, text: &#x27;Проверь подключение к интернету и попробуй снова.&#x27;, primary: &#x27;Подключиться снова&#x27;, secondary: &#x27;На главную&#x27; },
-          left: { icon: &#x27;log-out&#x27;, title: &#x27;Ты вышел из разговора&#x27;, text: &#x27;Комната останется активной 10 минут после выхода всех участников. Ты можешь вернуться по этой ссылке.&#x27;, primary: &#x27;Вернуться в разговор&#x27;, secondary: &#x27;На главную&#x27; },
-          &#x27;left-last&#x27;: { icon: &#x27;log-out&#x27;, title: &#x27;Ты вышел из разговора&#x27;, text: &#x27;Комната останется активной 10 минут после выхода всех участников. Ты можешь вернуться по этой ссылке.&#x27;, primary: &#x27;Вернуться в разговор&#x27;, secondary: &#x27;На главную&#x27; },
+          disconnected: { icon: &#x27;unplug&#x27;, title: &#x27;Связь прервалась&#x27;, text: &#x27;Проверь интернет и попробуй ещё раз.&#x27;, primary: &#x27;Подключиться снова&#x27;, secondary: &#x27;На главную&#x27; },
+          left: { icon: &#x27;log-out&#x27;, title: &#x27;Ты вышел из разговора&#x27;, text: &#x27;После выхода последнего участника ссылка будет работать ещё 10 минут. Ты сможешь вернуться по ней.&#x27;, primary: &#x27;Вернуться в разговор&#x27;, secondary: &#x27;На главную&#x27; },
+          &#x27;left-last&#x27;: { icon: &#x27;log-out&#x27;, title: &#x27;Ты вышел из разговора&#x27;, text: &#x27;После выхода последнего участника ссылка будет работать ещё 10 минут. Ты сможешь вернуться по ней.&#x27;, primary: &#x27;Вернуться в разговор&#x27;, secondary: &#x27;На главную&#x27; },
           finished: { icon: &#x27;phone-off&#x27;, title: &#x27;Разговор завершён&#x27;, text: &#x27;Создай новую комнату, чтобы продолжить общение.&#x27;, primary: &#x27;На главную&#x27; }
         };
         const state = states[type];
